@@ -193,11 +193,13 @@ config.plugins.foreca.units = ConfigSelection(default="metrickmh", choices=[("me
 config.plugins.foreca.time = ConfigSelection(default="24h", choices=[("12h", _("12 h")), ("24h", _("24 h"))])
 config.plugins.foreca.debug = ConfigEnableDisable(default=False)
 
+curskin = config.skin.primary_skin.value.replace('/skin.xml', '')
 
 HEADERS = {'User-Agent': 'Mozilla/5.0 (SmartHub; SMART-TV; U; Linux/SmartTV; Maple2012) AppleWebKit/534.7 (KHTML, like Gecko) SmartTV Safari/534.7'}
 MAIN_PAGE = "http://www.foreca.net"
 USR_PATH = resolveFilename(SCOPE_CONFIG) + "Foreca"
 THUMB_PATH = resolveFilename(SCOPE_PLUGINS) + "Extensions/Foreca/thumb/"
+THUMB_SKIN = resolveFilename(SCOPE_SKIN)+curskin+"/foreca/"
 SIGN = chr(176) if PY3 else unichr(176).encode("utf-8")
 # deviceName = HardwareInfo().get_device_name()
 DEBUG = config.plugins.foreca.debug.value
@@ -415,8 +417,18 @@ class MainMenuList(MenuList):
 	def downloadThumbnail(self):
 		thumbUrl = self.list[self.idx][0]
 		windDirection = self.list[self.idx][3]
-		self.thumb = THUMB_PATH + str(thumbUrl + ".png")
-		self.wind = THUMB_PATH + str(windDirection)
+                if os.path.exists(THUMB_SKIN + str(thumbUrl+ ".png")):
+                    self.thumb = THUMB_SKIN + str(thumbUrl+ ".png")
+                    # print(self.thumb)
+                else:
+                    self.thumb = THUMB_PATH + str(thumbUrl+ ".png")
+                    # print(self.thumb)
+                if os.path.exists(THUMB_SKIN + str(windDirection)):
+                    self.wind = THUMB_SKIN + str(windDirection)
+                    # print(self.thumb)
+                else:
+                    self.wind = THUMB_PATH + str(windDirection)
+                    # print(self.thumb)
 		self.buildEntry(None)
 
 #----------------------------------- Build entries for list -------------------------------
@@ -1573,7 +1585,10 @@ class SatPanel(Screen, HelpableScreen):
 
 		res = [entry]
 		#if DEBUG: print(pluginPrintname, "entry=", entry)
-		thumb = LoadPixmap(THUMB_PATH + entry[1] + ".png")
+                try:
+                    thumb = LoadPixmap(THUMB_SKIN + entry[1] + ".png")
+                except:
+                    thumb = LoadPixmap(THUMB_PATH + entry[1] + ".png")
 		thumb_width = 200
 		if pict_scale:
 			thumb_width = thumb.size().width()
