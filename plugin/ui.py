@@ -1061,12 +1061,6 @@ class ForecaPreview(Screen, HelpableScreen):
 		self.Zukunft(self.tag)
 
 	def titel(self):
-		"""
-		foundPos = self.ort.find("/")
-		plaats = _(self.ort[0:foundPos]) + "-" + self.ort[foundPos + 1:len(self.ort)]
-		self.plaats = plaats.replace("_", " ")
-		self.setTitle(_("Foreca Weather Forecast") + ' ' + self.plaats)
-		"""
 		self.setTitle(_("Foreca Weather Forecast") + " " + _("v.") + VERSION)
 
 	def Fav0(self):
@@ -1406,7 +1400,6 @@ class ForecaPreview(Screen, HelpableScreen):
 		self["Titel5"].text = ''  # datum2
 
 		self.titel()
-
 		self["MainList"].SetList(datalist)
 		self["MainList"].selectionEnabled(0)
 		self["MainList"].show
@@ -1639,7 +1632,7 @@ class CityPanel(Screen, HelpableScreen):
 			self.filter,
 			VirtualKeyBoard,
 			title=_("Search your City"),
-			text='Rome')
+			text='')
 
 	def filter(self, result):
 		if result:
@@ -2606,10 +2599,13 @@ class View_Slideshow(Screen):
 				"cancel": (self.Exit, _("Exit - End")),
 				"red": (self.Exit, _("Exit - End")),
 				"stop": (self.Exit, _("Exit - End")),
+                "ok": (self.PlayPause, _("Pause")),
 				"pause": (self.PlayPause, _("Pause")),
 				"playpause": (self.PlayPause, _("Play/Pause")),
 				"previous": (self.prevPic, _("Left - Previous")),
 				"next": (self.nextPic, _("Right - Next")),
+				"left": (self.prevPic, _("Left - Previous")),
+				"right": (self.nextPic, _("Right - Next")),
 				"showEventInfo": (self.info, _("Info - Legend")),
 				"info": (self.info, _("Info - Legend")),
 			},
@@ -2654,10 +2650,12 @@ class View_Slideshow(Screen):
 			"Server URL:    %s\n"
 		) % BASEURL))
 		entries = [
-			("VERSION", "%s" % VERSION),  # No translation needed
-			(_("Prev/Next"), _("Prev./Next Pic")),
+			("VERSION", "%s" % VERSION),
+			(_("Ok"), _("Pause")),
 			(_("Pause"), _("Pause Pic")),
 			(_("Play"), _("Play Pic")),
+			(_("Left/Right"), _("Prev./Next Pic")),
+			(_("Prev/Next"), _("Prev./Next Pic")),
 			(_("Stop"), _("Exit")),
 			(_("Red"), _("Exit")),
 			(_("Info"), _("This information"))
