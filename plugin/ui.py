@@ -99,7 +99,7 @@ try:
 except NameError:
 	unicode = str  # In Python 3, unicode == str
 
-VERSION = "3.3.7"
+VERSION = "3.3.8"
 
 
 #
@@ -807,9 +807,11 @@ class ForecaPreview(Screen, HelpableScreen):
 		fav1 = config.plugins.foreca.fav1.getValue()[config.plugins.foreca.fav1.getValue().rfind("/") + 1:]
 		fav2 = config.plugins.foreca.fav2.getValue()[config.plugins.foreca.fav2.getValue().rfind("/") + 1:]
 		start = config.plugins.foreca.home.getValue()[config.plugins.foreca.home.getValue().rfind("/") + 1:]
+		"""
 		print(pluginPrintname, "fav1 location:", fav1)
 		print(pluginPrintname, "fav2 location:", fav2)
 		print(pluginPrintname, "Start Home location:", start)
+		"""
 		# Get home location
 		self.ort = config.plugins.foreca.home.value
 		start = self.ort[self.ort.rfind("/") + 1:]
