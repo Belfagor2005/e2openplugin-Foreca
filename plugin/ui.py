@@ -1,10 +1,9 @@
 # -*- coding: UTF-8 -*-
 
-from __future__ import absolute_import
-from __future__ import print_function
 from . import _, file_url
+
 from Components.AVSwitch import AVSwitch
-from Components.ActionMap import ActionMap, NumberActionMap, HelpableActionMap
+from Components.ActionMap import HelpableActionMap
 from Components.ConfigList import ConfigList
 from Components.ConfigList import ConfigListScreen
 from Components.FileList import FileList
@@ -18,6 +17,7 @@ from Components.PluginComponent import plugins
 from Components.Sources.StaticText import StaticText
 from Components.config import (
 	config,
+	configfile,
 	ConfigSelection,
 	ConfigInteger,
 	ConfigYesNo,
@@ -28,54 +28,41 @@ from Components.config import (
 	KEY_0,
 	ConfigText,
 )
+from datetime import datetime, timedelta
 from enigma import (
 	eListboxPythonMultiContent,
 	ePicLoad,
 	eTimer,
 	getDesktop,
 	gFont,
-
 	RT_VALIGN_CENTER,
 )
-from locale import setlocale, LC_COLLATE, strxfrm
-from os import makedirs, unlink, remove, listdir
-from os.path import exists, join
-from re import sub, DOTALL, compile, findall
-from PIL import Image
 from Screens.ChoiceBox import ChoiceBox
 from Screens.HelpMenu import HelpableScreen
 from Screens.MessageBox import MessageBox
 from Screens.Screen import Screen
-from skin import parseFont, parseColor
-from sys import version_info
-from time import localtime, mktime, strftime
 from Tools.BoundFunction import boundFunction
 from Tools.Directories import resolveFilename, SCOPE_CONFIG, SCOPE_PLUGINS
 from Tools.LoadPixmap import LoadPixmap
+from locale import setlocale, LC_COLLATE, strxfrm
+from os import makedirs, unlink, remove, listdir
+from os.path import exists, join
+from re import sub, DOTALL, compile, findall
+from skin import parseFont, parseColor
+from time import strftime
 from twisted.internet._sslverify import ClientTLSOptions
 from twisted.internet.ssl import ClientContextFactory
-# from twisted.internet.reactor import callInThread
+
+from urllib.parse import urlparse
+from urllib.request import urlopen, Request, pathname2url
+from PIL import Image
+from io import BytesIO
+
+
 import requests
 import ssl
+import warnings
 
-PY3 = version_info[0] == 3
-if PY3:
-	from urllib.request import urlopen, Request, pathname2url
-else:
-	from urllib import pathname2url
-	from urllib2 import urlopen, Request
-
-
-try:
-	from urllib.parse import urlparse
-except ImportError:
-	from urlparse import urlparse
-
-
-if PY3:
-	from io import BytesIO
-else:
-	from cStringIO import StringIO as BytesIO
 
 try:
 	_create_unverified_https_context = ssl._create_unverified_context
@@ -85,13 +72,9 @@ else:
 	ssl._create_default_https_context = _create_unverified_https_context
 
 
-try:
-	unicode
-except NameError:
-	unicode = str  # In Python 3, unicode == str
+VERSION = "3.3.8"
 
 
-VERSION = "3.3.6"
 #
 #  $Id$
 #
@@ -220,20 +203,28 @@ VERSION = "3.3.6"
 #   secure remove image from folde CACHE_PATH
 #   Remove profile ICC from bad image
 # 3.3.5 change URL to and many code improvements
+#  RECODE FROM LULULLA
 # To do:
 #   Add server url online
 # 3.3.6 fix translations and many code improvements
+#  RECODE FROM LULULLA
+# 3.3.7 removed .cfg files - add TV button for Menu Config
+#  RECODE FROM LULULLA
+# 3.3.8 Mahor fix on clean all code unnecessay / append new PY3
+#  Translate 90% complete
+#
+#  RECODE FROM LULULLA
 
 
 class WebClientContextFactory(ClientContextFactory):
 	def __init__(self, url=None):
-		domain = urlparse(url).netloc
-		self.hostname = domain
+		super().__init__()  # Initialize base class
+		self.hostname = urlparse(url).netloc if url else None
 
 	def getContext(self, hostname=None, port=None):
-		ctx = ClientContextFactory.getContext(self)
-		if self.hostname and ClientTLSOptions is not None:  # workaround for TLS SNI
-			ClientTLSOptions(self.hostname, ctx)
+		ctx = super().getContext()
+		if self.hostname and ClientTLSOptions is not None:
+			ClientTLSOptions(self.hostname, ctx)  # Apply TLS SNI
 		return ctx
 
 
@@ -241,6 +232,7 @@ languages = [
 	("no", "NO (Default)"),
 	("com", "English"),
 	("ba", "Bosnia ed Erzegovina"),
+	("nz", "New Zealand"),
 	("bg", "българск"),
 	("cs", "Čeština"),
 	("da", "Dansk"),
@@ -256,7 +248,6 @@ languages = [
 	("lv", "Latviešu"),
 	("hu", "Magyar"),
 	("nl", "Nederlands"),
-	("nz", "New Zealand"),
 	("pl", "Polski"),
 	("pt", "Português"),
 	("ro", "Româneşte"),
@@ -267,10 +258,8 @@ languages = [
 	("tr", "Türkçe"),
 ]
 
-
 pluginPrintname = "[Foreca Ver. %s]" % VERSION
-
-config.plugins.foreca.languages = ConfigSelection(default="no", choices=languages)
+# config.plugins.foreca.languages = ConfigSelection(default="no", choices=languages)
 config.plugins.foreca.home = ConfigText(default="Germany/Berlin", fixed_size=False)
 config.plugins.foreca.fav1 = ConfigText(default="United_States/New_York/New_York_City", fixed_size=False)
 config.plugins.foreca.fav2 = ConfigText(default="Japan/Tokyo", fixed_size=False)
@@ -290,7 +279,7 @@ config.plugins.foreca.debug = ConfigEnableDisable(default=True)
 HEADERS = {'User-Agent': 'Mozilla/5.0 (X11; U; Linux x86_64; en-US; rv:1.9.2.6) Gecko/20100627 Firefox/3.6.6'}
 
 
-def get_base_url_from_txt(file_url, fallback_url="https://www.foreca.ba/"):
+def get_base_url_from_txt(file_url, fallback_url="https://www.foreca.nz/"):
 	"""
 	Reads a new URL base from a .txt file hosted on a site.
 	If it fails to get the content or the URL is invalid, it uses a fallback URL base.
@@ -301,19 +290,29 @@ def get_base_url_from_txt(file_url, fallback_url="https://www.foreca.ba/"):
 	"""
 	try:
 		response = requests.get(file_url, timeout=10)
-		response.raise_for_status()  # Verifica eventuali errori HTTP
-		new_base_url = response.text.strip()  # Rimuove eventuali spazi o newline
+		response.raise_for_status()
+
+		new_base_url = response.content.decode(response.encoding or "utf-8").strip()
+
+		# Validate the URL format
+		parsed_url = urlparse(new_base_url)
+		if not parsed_url.scheme or not parsed_url.netloc:
+			raise ValueError("Invalid URL format in the file")
+
+		# Test if the new base URL is accessible
 		test_response = requests.get(new_base_url, timeout=10)
 		test_response.raise_for_status()
+
 		print("New URL base found and working:", new_base_url)
 		return new_base_url
+
 	except Exception as e:
-		# On error, return the fallback base URL
 		print("Error reading base URL from file .txt:", str(e))
 		print("Using the fallback URL base:", fallback_url)
 		return fallback_url
 
 
+lng = 'en'
 try:
 	lng = config.osd.language.value
 	lng = lng[:-3]
@@ -321,16 +320,7 @@ except:
 	lng = 'en'
 	pass
 
-"""
-selected_language = config.plugins.foreca.languages.value
-if not selected_language == 'no':
-	if selected_language == "https://www.farsiweather.com/":
-		BASEURL = selected_language  # URL specifico per il Farsi
-	else:
-		BASEURL = 'https://www.foreca.' + selected_language
-else:
-	BASEURL = get_base_url_from_txt(file_url)
-"""
+
 BASEURL = get_base_url_from_txt(file_url)
 if not BASEURL.endswith("/"):
 	BASEURL += "/"
@@ -342,14 +332,21 @@ PICON_PATH = resolveFilename(SCOPE_PLUGINS) + "Extensions/Foreca/picon/"
 THUMB_PATH = resolveFilename(SCOPE_PLUGINS) + "Extensions/Foreca/thumb/"
 print("BASEURL in uso:", BASEURL)
 
+DEBUG = config.plugins.foreca.debug.value
+
+if DEBUG:
+	print(pluginPrintname, "Debug enabled")
+else:
+	print(pluginPrintname, "Debug disabled")
+
 
 # Make Path for Slideshow
-CACHE_PATH = "/tmp/Foreca/"
+CACHE_PATH = "/var/cache/Foreca/"
 if not exists(CACHE_PATH):
 	try:
-		# makedirs(CACHE_PATH, 755)
 		makedirs(CACHE_PATH, mode=0o755, exist_ok=True)
 	except Exception:
+		CACHE_PATH = "/tmp/"
 		pass
 
 
@@ -375,9 +372,7 @@ if not exists(USR_PATH):
 # Get screen size
 size_w = getDesktop(0).size().width()
 size_h = getDesktop(0).size().height()
-
 HD = False if size_w < 1280 else True
-
 
 # Get diacritics to handle
 FILTERin = []
@@ -388,6 +383,8 @@ MAPPING = {"zh": "en"}
 LANGUAGE = language.getActiveLanguage()[:2]  # "en_US" -> "en"
 if LANGUAGE in MAPPING:
 	LANGUAGE = MAPPING.get(LANGUAGE, "en")
+
+
 try:
 	setlocale(LC_COLLATE, language.getLanguage())
 except Exception:
@@ -404,8 +401,21 @@ if exists(USR_PATH + "/Filter.cfg"):
 	file.close
 
 
-# ---------------------- Skin Functions ----------------------------------------------------
+# ---------------------- Help Message Functions --------------------------------------------
 
+
+def format_message(entries):
+	max_left_width = max(len(entry[0]) for entry in entries)
+	formatted_message = ""
+	for entry in entries:
+		left_column = entry[0]
+		right_column = entry[1]
+		spaces = " " * (max_left_width - len(left_column))
+		formatted_message += "{:<{width}} =   {}\n".format(left_column + spaces, right_column, width=max_left_width)
+	return formatted_message
+
+
+# ---------------------- Skin Functions ----------------------------------------------------
 
 def download_image(url, devicepath):
 	try:
@@ -413,19 +423,17 @@ def download_image(url, devicepath):
 		resp = urlopen(req, timeout=10)
 		with open(devicepath, 'wb') as f:
 			f.write(resp.read())
-		FAlog("SatBild: Image saved to %s" % devicepath)
-		print("SatBild: Image saved to %s" % devicepath)
+		if DEBUG:
+			FAlog("SatBild: Image saved to %s" % str(devicepath))
 		return True
 	except Exception as e:
-		FAlog("SatBild Error: Failed to download image", str(e))
-		print("SatBild Error: Failed to download image", str(e))
+		if DEBUG:
+			FAlog("SatBild Error: Failed to download image", str(e))
 		raise e
 
 
 def remove_icc_profile(devicepath):
 	try:
-		from PIL import Image
-		import warnings
 		warnings.filterwarnings("ignore", "(?s).*iCCP.*", category=UserWarning)
 		img = Image.open(devicepath)
 		img.save(devicepath, icc_profile=None)
@@ -476,7 +484,8 @@ class MainMenuList(MenuList):
 		self.idx = 0
 		self.thumb = ""
 		self.pos = 20
-		FAlog("MainMenuList...")
+		if DEBUG:
+			FAlog("MainMenuList...")
 
 # --------------------------- get skin attribs ---------------------------------------------
 	def applySkin(self, desktop, parent):
@@ -581,11 +590,13 @@ class MainMenuList(MenuList):
 		self.l.setFont(2, self.font2)
 		self.l.setFont(3, self.font3)
 		self.l.setItemHeight(self.itemHeight)
+
 		return GUIComponent.applySkin(self, desktop, parent)
 
 # --------------------------- Go through all list entries ----------------------------------
 	def buildEntries(self):
-		FAlog("buildEntries:", str(len(self.list)))
+		if DEBUG:
+			FAlog("buildEntries:", str(len(self.list)))
 		if self.idx == len(self.list):
 			self.setList(self.listCompleted)
 			if self.callback:
@@ -601,23 +612,15 @@ class MainMenuList(MenuList):
 		self.buildEntry(None)
 
 # ----------------------------------- Build entries for list -------------------------------
+
 	def buildEntry(self, picInfo=None):
 		self.x = self.list[self.idx]
 		self.res = [(self.x[0], self.x[1])]
 
+		""" Determine color base """
+		# Color by temperature
 		violetred = 0xC7D285
-		violet = 0xff40b3
-		gruen = 0x77f424
-		dgruen = 0x53c905
-		drot = 0xff4040
-		rot = 0xff6640
-		orange = 0xffb340
-		gelb = 0xffff40
-		ddblau = 0x3b62ff
-		dblau = 0x408cff
 		mblau = 0x40b3ff
-		blau = 0x40d9ff
-		hblau = 0x40ffff
 		weiss = 0xffffff
 
 		if config.plugins.foreca.units.value == "us":
@@ -626,30 +629,36 @@ class MainMenuList(MenuList):
 		else:
 			self.centigrades = int(self.x[2])
 			tempUnit = "°C"
-		if self.centigrades <= -20:
-			self.tempcolor = ddblau
-		elif self.centigrades <= -15:
-			self.tempcolor = dblau
-		elif self.centigrades <= -10:
-			self.tempcolor = mblau
-		elif self.centigrades <= -5:
-			self.tempcolor = blau
-		elif self.centigrades <= 0:
-			self.tempcolor = hblau
-		elif self.centigrades < 5:
-			self.tempcolor = dgruen
-		elif self.centigrades < 10:
-			self.tempcolor = gruen
-		elif self.centigrades < 15:
-			self.tempcolor = gelb
-		elif self.centigrades < 20:
-			self.tempcolor = orange
-		elif self.centigrades < 25:
-			self.tempcolor = rot
-		elif self.centigrades < 30:
-			self.tempcolor = drot
-		else:
-			self.tempcolor = violet
+
+		def getTempColor(temp):
+			""" Determine color based on temperature """
+			if temp <= -20:
+				return 0x3b62ff
+			elif temp <= -15:
+				return 0x408cff
+			elif temp <= -10:
+				return 0x40b3ff
+			elif temp <= -5:
+				return 0x40d9ff
+			elif temp <= 0:
+				return 0x40ffff
+			elif temp < 5:
+				return 0x53c905
+			elif temp < 10:
+				return 0x77f424
+			elif temp < 15:
+				return 0xffff40
+			elif temp < 20:
+				return 0xffb340
+			elif temp < 25:
+				return 0xff6640
+			elif temp < 30:
+				return 0xff4040
+			else:
+				return 0xff40b3
+
+		# Color management based on temperature
+		self.tempcolor = getTempColor(self.centigrades)
 
 		# Time
 		x, y, w, h = self.valTime
@@ -687,7 +696,7 @@ class MainMenuList(MenuList):
 		textsechs = self.x[6]
 		textsechs = textsechs.replace("&deg;", "") + tempUnit
 		textsechs = textsechs.replace("Feels Like:", _("Feels like:"))
-		self.res.append(MultiContentEntryText(pos=(x, y), size=(w, h), font=2, text=textsechs, color=mblau, color_sel=mblau))
+		self.res.append(MultiContentEntryText(pos=(x, y), size=(w, h), font=2, text=textsechs, color=self.tempcolor, color_sel=self.tempcolor))
 
 		x, y, w, h = self.valText3
 		textsechs = self.x[7]
@@ -704,7 +713,8 @@ class MainMenuList(MenuList):
 		self.buildEntries()
 
 	def SetList(self, lx):
-		FAlog("SetList")
+		if DEBUG:
+			FAlog("SetList")
 		self.list = lx
 		# self.l.setItemHeight(90)
 		del self.listCompleted
@@ -771,139 +781,127 @@ class ForecaPreview(Screen, HelpableScreen):
 	def __init__(self, session):
 		global MAIN_PAGE, menu
 		self.session = session
-		# actual, local Time as Tuple
-		lt = localtime()
-		# Extract the Tuple, Date
-		jahr, monat, tag = lt[0:3]
-		heute = "%04i%02i%02i" % (jahr, monat, tag)
-		FAlog("determined local date:", heute)
+		now = datetime.now()
+		heute = now.strftime("%Y%m%d")
+		if DEBUG:
+			FAlog("determined local date:", str(heute))
+
 		self.tag = 0
 
 		# Get favorites
-		global fav1, fav2, city, start
-		if exists(USR_PATH + "/fav1.cfg"):
-			with open(USR_PATH + "/fav1.cfg", "r") as file:
-				fav1 = file.readline().strip()
-			fav1 = fav1[fav1.rfind("/") + 1:]
-		else:
-			fav1 = "New_York_City"
+		global fav1, fav2, start
+		fav1 = config.plugins.foreca.fav1.getValue()[config.plugins.foreca.fav1.getValue().rfind("/") + 1:]
+		fav2 = config.plugins.foreca.fav2.getValue()[config.plugins.foreca.fav2.getValue().rfind("/") + 1:]
+		start = config.plugins.foreca.home.getValue()[config.plugins.foreca.home.getValue().rfind("/") + 1:]
+		"""
 		print(pluginPrintname, "fav1 location:", fav1)
-
-		if exists(USR_PATH + "/fav2.cfg"):
-			with open(USR_PATH + "/fav2.cfg", "r") as file:
-				fav2 = file.readline().strip()
-			fav2 = fav2[fav2.rfind("/") + 1:]
-		else:
-			fav2 = "Moskva"
 		print(pluginPrintname, "fav2 location:", fav2)
-
+		print(pluginPrintname, "Start Home location:", start)
+		"""
 		# Get home location
-		if exists(USR_PATH + "/startservice.cfg"):
-			with open(USR_PATH + "/startservice.cfg", "r") as file:
-				self.ort = file.readline().strip()
-				start = self.ort[self.ort.rfind("/") + 1:len(self.ort)]
-		else:
-			self.ort = "United_Kingdom/London"
-			start = "London"
-		print(pluginPrintname, "home location:", self.ort)
-		FAlog("home location:", self.ort)
-		"""
-		# MAIN_URL = "%s%s?lang=%s&details=%s&units=%s&tf=%s" % (
-			# BASEURL,
-			# pathname2url(self.ort),
-			# LANGUAGE,
-			# heute,
-			# config.plugins.foreca.units.value,
-			# config.plugins.foreca.time.value
-		# )
-
-		# # MAIN_PAGE = "%s%s?lang=%s&details=%s&units=%s&tf=%s" % (BASEURL, pathname2url(self.ort), LANGUAGE, heute, config.plugins.foreca.units.value, config.plugins.foreca.time.value)
-
-		# MAIN_PAGE = clean_url(MAIN_URL)
-		"""
-		MAIN_PAGE = "%s%s?lang=%s&details=%s&units=%s&tf=%s" % (BASEURL, pathname2url(self.ort), LANGUAGE, heute, config.plugins.foreca.units.value, config.plugins.foreca.time.value)
-
-		FAlog("initial link:", MAIN_PAGE)
+		self.ort = config.plugins.foreca.home.value
+		start = self.ort[self.ort.rfind("/") + 1:]
+		MAIN_PAGE = "%s%s?lang=%s&details=%s&units=%s&tf=%s" % (
+			BASEURL,
+			pathname2url(self.ort),
+			LANGUAGE,
+			heute,
+			config.plugins.foreca.units.value,
+			config.plugins.foreca.time.value
+		)
+		if DEBUG:
+			FAlog("initial link:", MAIN_PAGE)
 
 		if size_w == 1920:
 			self.skin = """
-				<screen name="ForecaPreview" position="center,center" size="1200,820" title="Foreca Weather Forecast">
-					<ePixmap pixmap="skin_default/buttons/red.png" position="10,5" size="295,70" />
-					<ePixmap pixmap="skin_default/buttons/green.png" position="305,5" size="295,70" />
-					<ePixmap pixmap="skin_default/buttons/yellow.png" position="600,5" size="295,70" />
-					<ePixmap pixmap="skin_default/buttons/blue.png" position="895,5" size="295,70" />
+				<screen name="ForecaPreview" position="center,center" size="1200,900" title="Foreca Weather Forecast">
+					<eLabel backgroundColor="red" position="10,65" size="295,6" zPosition="11" />
+					<eLabel backgroundColor="green" position="305,65" size="295,6" zPosition="11" />
+					<eLabel backgroundColor="yellow" position="600,65" size="295,6" zPosition="11" />
+					<eLabel backgroundColor="blue" position="895,65" size="295,6" zPosition="11" />
 					<widget backgroundColor="#9f1313" font="Regular;30" halign="center" position="10,5" render="Label" shadowColor="black" shadowOffset="-2,-2" size="295,70" source="key_red" transparent="1" valign="center" zPosition="1" />
 					<widget backgroundColor="#1f771f" font="Regular;30" halign="center" position="305,5" render="Label" shadowColor="black" shadowOffset="-2,-2" size="295,70" source="key_green" transparent="1" valign="center" zPosition="1" />
 					<widget backgroundColor="#a08500" font="Regular;30" halign="center" position="600,5" render="Label" shadowColor="black" shadowOffset="-2,-2" size="295,70" source="key_yellow" transparent="1" valign="center" zPosition="1" />
 					<widget backgroundColor="#18188b" font="Regular;30" halign="center" position="895,5" render="Label" shadowColor="black" shadowOffset="-2,-2" size="295,70" source="key_blue" transparent="1" valign="center" zPosition="1" />
-					<eLabel backgroundColor="grey" position="10,80" size="1180,1" />
-					<widget backgroundColor="background" source="Titel" render="Label" position="6,836" size="1180,40" foregroundColor="yellow" font="Regular;32" halign="center" transparent="1" />
+					<eLabel backgroundColor="#999999" position="10,80" size="1180,1" />
+					<widget backgroundColor="background" source="Titel" render="Label" position="13,775" size="1180,40" foregroundColor="yellow" font="Regular;32" halign="center" transparent="1" />
 					<widget backgroundColor="background" source="Titel2" render="Label" position="13,123" size="1180,40" font="Regular;32" halign="center" transparent="1" />
 					<widget backgroundColor="background" source="Titel3" render="Label" position="13,84" size="1180,40" foregroundColor="yellow" font="Regular;32" halign="center" transparent="1" />
-					<widget backgroundColor="background" source="Titel4" render="Label" position="6,882" size="1180,40" font="Regular;32" halign="center" transparent="1" />
-					<widget name="MainList" position="10,160" size="1180,600" enableWrapAround="1" scrollbarMode="showOnDemand" />
-					<eLabel backgroundColor="grey" position="10,770" size="1180,1" />
-					<ePixmap position="10,780" size="60,30" pixmap="skin_default/icons/info.png" />
-					<ePixmap position="360,780" size="60,30" pixmap="skin_default/icons/menu.png" />
-					<ePixmap position="710,780" size="60,30" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_ok.png" />
-					<widget source="key_info" render="Label" position="90,780" size="250,35" font="Regular;30" />
-					<widget source="key_menu" render="Label" position="440,780" size="250,35" font="Regular;30" />
-					<widget source="key_ok" render="Label" position="790,780" size="250,35" font="Regular;30" />
-					<ePixmap position="1120,780" size="60,30" pixmap="skin_default/icons/help.png" />
+					<widget backgroundColor="background" source="Titel4" render="Label" position="13,818" size="1180,40" font="Regular;32" halign="center" transparent="1" />
+					<widget name="MainList" position="13,165" size="1180,600" zPosition="3" foregroundColor="#ffffff" backgroundColor="#000000" foregroundColorSelected="#ffffff" backgroundColorSelected="#999999" font0="Regular;30" font1="Regular;30" font2="Regular;28" font3="Regular;30" itemHeight="200" setTime="15,40,100,45" setPict="150,40,70,70" setPictScale="1" setTemp="280,50,200,40" setTempUnits="280,95,150,40" setWindPict="550,75,35,35" setWindPictScale="1" setWind="600,50,95,40" setWindUnits="600,95,50,40" text1Pos="720,0,600,42" text2Pos="720,50,600,42" text3Pos="720,100,600,42" text4Pos="720,150,600,42" enableWrapAround="1" scrollbarMode="showOnDemand" transparent="1" />
+					<eLabel backgroundColor="#999999" position="10,770" size="1180,1" />
+					<ePixmap position="1025,864" size="60,30" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_text.png" />
+					<ePixmap position="379,864" size="60,30" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_menu.png" />
+					<ePixmap position="42,864" size="60,30" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_ok.png" />
+					<ePixmap position="705,864" size="60,30" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_info.png" />
+					<ePixmap position="1135,864" size="60,30" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_next.png" />
+					<ePixmap position="1085,864" size="60,30" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_prev.png" />
+					<ePixmap position="1135,864" size="60,30" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_help.png" />
+					<widget source="key_info" render="Label" position="771,864" size="250,35" font="Regular;30" />
+					<widget source="key_menu" render="Label" position="441,864" size="250,35" font="Regular;30" />
+					<widget source="key_ok" render="Label" position="104,864" size="250,35" font="Regular;30" />
 				</screen>"""
 		elif size_w == 2560:
 			self.skin = """
-				<screen name="ForecaPreview" position="center,center" size="1640,1040" title="Foreca Weather Forecast" >
-					<ePixmap pixmap="skin_default/buttons/red.png" position="20,10" size="400,80" />
-					<ePixmap pixmap="skin_default/buttons/green.png" position="420,10" size="400,80" />
-					<ePixmap pixmap="skin_default/buttons/yellow.png" position="820,10" size="400,80" />
-					<ePixmap pixmap="skin_default/buttons/blue.png" position="1220,10" size="400,80" />
-					<widget source="key_red" render="Label" position="20,10" size="400,80" zPosition="1" font="Regular;40" halign="center" valign="center" backgroundColor="#9f1313" transparent="1" shadowColor="black" shadowOffset="-2,-2" />
-					<widget source="key_green" render="Label" position="420,10" size="400,80" zPosition="1" font="Regular;40" halign="center" valign="center" backgroundColor="#1f771f" transparent="1" shadowColor="black" shadowOffset="-2,-2" />
-					<widget source="key_yellow" render="Label" position="820,10" size="400,80" zPosition="1" font="Regular;40" halign="center" valign="center" backgroundColor="#a08500" transparent="1" shadowColor="black" shadowOffset="-2,-2" />
-					<widget source="key_blue" render="Label" position="1220,10" size="400,80" zPosition="1" font="Regular;40" halign="center" valign="center" backgroundColor="#18188b" transparent="1" shadowColor="black" shadowOffset="-2,-2" />
-					<eLabel position="20,100" size="1600,2" backgroundColor="grey" />
-					<widget backgroundColor="background" source="Titel" render="Label" position="20,110" size="1600,100" font="Regular;44" valign="center" halign="center" transparent="1"/>
-					<widget backgroundColor="background" source="Titel2" render="Label" position="20,110" size="1600,100" font="Regular;44" valign="center" halign="center" transparent="1"/>
-					<widget name="MainList" position="20,220" size="1600,720" enableWrapAround="1" scrollbarMode="showOnDemand" />
-					<eLabel position="20,960" size="1600,2" backgroundColor="grey" />
-					<ePixmap position="20,980" size="100,50" pixmap="skin_default/buttons/key_info.png" />
-					<ePixmap position="460,980" size="100,50" pixmap="skin_default/buttons/key_menu.png" />
-					<ePixmap position="900,980" size="100,50" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_ok.png" />
-					<widget source="key_info" render="Label" position="140,980" size="320,50" font="Regular;44" />
-					<widget source="key_menu" render="Label" position="580,980" size="320,50" font="Regular;44" />
-					<widget source="key_ok" render="Label" position="1020,980" size="320,50" font="Regular;44" />
-					<ePixmap position="1500,980" size="100,50" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_help.png" />
+				<screen name="ForecaPreview" position="center,center" size="1600,1200" title="Foreca Weather Forecast">
+					<eLabel backgroundColor="red" position="14,87" size="394,8" zPosition="11"/>
+					<eLabel backgroundColor="green" position="407,87" size="394,8" zPosition="11"/>
+					<eLabel backgroundColor="yellow" position="800,87" size="394,8" zPosition="11"/>
+					<eLabel backgroundColor="blue" position="1194,87" size="394,8" zPosition="11"/>
+					<widget backgroundColor="#9f1313" font="Regular;40" halign="center" position="14,7" render="Label" shadowColor="black" shadowOffset="-2,-2" size="394,94" source="key_red" transparent="1" valign="center" zPosition="1"/>
+					<widget backgroundColor="#1f771f" font="Regular;40" halign="center" position="407,7" render="Label" shadowColor="black" shadowOffset="-2,-2" size="394,94" source="key_green" transparent="1" valign="center" zPosition="1"/>
+					<widget backgroundColor="#a08500" font="Regular;40" halign="center" position="800,7" render="Label" shadowColor="black" shadowOffset="-2,-2" size="394,94" source="key_yellow" transparent="1" valign="center" zPosition="1"/>
+					<widget backgroundColor="#18188b" font="Regular;40" halign="center" position="1194,7" render="Label" shadowColor="black" shadowOffset="-2,-2" size="394,94" source="key_blue" transparent="1" valign="center" zPosition="1"/>
+					<eLabel backgroundColor="#999999" position="14,107" size="1574,2"/>
+					<widget backgroundColor="background" source="Titel" render="Label" position="18,1034" size="1574,54" foregroundColor="yellow" font="Regular;43" halign="center" transparent="1"/>
+					<widget backgroundColor="background" source="Titel2" render="Label" position="18,164" size="1574,54" font="Regular;43" halign="center" transparent="1"/>
+					<widget backgroundColor="background" source="Titel3" render="Label" position="18,112" size="1574,54" foregroundColor="yellow" font="Regular;43" halign="center" transparent="1"/>
+					<widget backgroundColor="background" source="Titel4" render="Label" position="18,1091" size="1574,54" font="Regular;43" halign="center" transparent="1"/>
+					<widget name="MainList" position="18,220" size="1574,800" zPosition="3" foregroundColor="#ffffff" backgroundColor="#000000" foregroundColorSelected="#ffffff" backgroundColorSelected="#999999" font0="Regular;30" font1="Regular;30" font2="Regular;28" font3="Regular;30" itemHeight="267" setTime="15,40,100,45" setPict="150,40,70,70" setPictScale="1" setTemp="280,50,200,40" setTempUnits="280,95,150,40" setWindPict="550,75,35,35" setWindPictScale="1" setWind="600,50,95,40" setWindUnits="600,95,50,40" text1Pos="720,0,600,42" text2Pos="720,50,600,42" text3Pos="720,100,600,42" text4Pos="720,150,600,42" enableWrapAround="1" scrollbarMode="showOnDemand" transparent="1"/>
+					<eLabel backgroundColor="#999999" position="14,1027" size="1574,2"/>
+					<ePixmap position="1367,1152" size="80,40" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_text.png"/>
+					<ePixmap position="506,1152" size="80,40" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_menu.png"/>
+					<ePixmap position="56,1152" size="80,40" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_ok.png"/>
+					<ePixmap position="940,1152" size="80,40" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_info.png"/>
+					<ePixmap position="1514,1152" size="80,40" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_next.png"/>
+					<ePixmap position="1447,1152" size="80,40" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_prev.png"/>
+					<ePixmap position="1514,1152" size="80,40" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_help.png"/>
+					<widget source="key_info" render="Label" position="1028,1152" size="334,47" font="Regular;40"/>
+					<widget source="key_menu" render="Label" position="588,1152" size="334,47" font="Regular;40"/>
+					<widget source="key_ok" render="Label" position="139,1152" size="334,47" font="Regular;40"/>
 				</screen>"""
 		else:
 			self.skin = """
-				<screen name="ForecaPreview" position="center,center" size="820,520" title="Foreca Weather Forecast">
-					<ePixmap pixmap="skin_default/buttons/red.png" position="10,5" size="200,40" />
-					<ePixmap pixmap="skin_default/buttons/green.png" position="210,5" size="200,40" />
-					<ePixmap pixmap="skin_default/buttons/yellow.png" position="410,5" size="200,40" />
-					<ePixmap pixmap="skin_default/buttons/blue.png" position="610,5" size="200,40" />
-					<widget source="key_red" render="Label" position="10,5" size="200,40" zPosition="1" font="Regular;20" halign="center" valign="center" backgroundColor="#9f1313" transparent="1" shadowColor="black" shadowOffset="-2,-2" />
-					<widget source="key_green" render="Label" position="210,5" size="200,40" zPosition="1" font="Regular;20" halign="center" valign="center" backgroundColor="#1f771f" transparent="1" shadowColor="black" shadowOffset="-2,-2" />
-					<widget source="key_yellow" render="Label" position="410,5" size="200,40" zPosition="1" font="Regular;20" halign="center" valign="center" backgroundColor="#a08500" transparent="1" shadowColor="black" shadowOffset="-2,-2" />
-					<widget source="key_blue" render="Label" position="610,5" size="200,40" zPosition="1" font="Regular;20" halign="center" valign="center" backgroundColor="#18188b" transparent="1" shadowColor="black" shadowOffset="-2,-2" />
-					<eLabel position="10,50" size="800,1" backgroundColor="grey" />
-					<widget backgroundColor="background" source="Titel" render="Label" position="10,54" size="800,30" font="Regular;22" valign="center" halign="center" transparent="1" />
-					<widget backgroundColor="background" source="Titel2" render="Label" position="10,80" size="800,30" font="Regular;22" valign="center" halign="center" transparent="1" />
-					<widget backgroundColor="background" source="Titel3" render="Label" position="2,544" size="800,30" foregroundColor="yellow" font="Regular; 22" halign="center" transparent="1" />
-					<widget backgroundColor="background" source="Titel4" render="Label" position="0,588" size="800,30" font="Regular; 22" halign="center" transparent="1" />
-					<widget name="MainList" position="10,110" size="800,360" enableWrapAround="1" scrollbarMode="showOnDemand" />
-					<eLabel position="10,480" size="800,1" backgroundColor="grey" />
-					<ePixmap position="10,490" size="50,25" pixmap="skin_default/buttons/key_info.png" />
-					<ePixmap position="230,490" size="50,25" pixmap="skin_default/buttons/key_menu.png" />
-					<ePixmap position="450,490" size="50,25" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_ok.png" />
-					<widget source="key_info" render="Label" position="70,490" size="160,25" font="Regular;22" />
-					<widget source="key_menu" render="Label" position="290,490" size="160,25" font="Regular;22" />
-					<widget source="key_ok" render="Label" position="510,490" size="160,25" font="Regular;22" />
-					<ePixmap position="750,490" size="50,25" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_help.png" />
+				<screen name="ForecaPreview" position="center,center" size="800,600" title="Foreca Weather Forecast">
+					<eLabel backgroundColor="red" position="6,43" size="196,4" zPosition="11"/>
+					<eLabel backgroundColor="green" position="203,43" size="196,4" zPosition="11"/>
+					<eLabel backgroundColor="yellow" position="400,43" size="196,4" zPosition="11"/>
+					<eLabel backgroundColor="blue" position="596,43" size="196,4" zPosition="11"/>
+					<widget backgroundColor="#9f1313" font="Regular;20" halign="center" position="6,3" render="Label" shadowColor="black" shadowOffset="-2,-2" size="196,46" source="key_red" transparent="1" valign="center" zPosition="1"/>
+					<widget backgroundColor="#1f771f" font="Regular;20" halign="center" position="203,3" render="Label" shadowColor="black" shadowOffset="-2,-2" size="196,46" source="key_green" transparent="1" valign="center" zPosition="1"/>
+					<widget backgroundColor="#a08500" font="Regular;20" halign="center" position="400,3" render="Label" shadowColor="black" shadowOffset="-2,-2" size="196,46" source="key_yellow" transparent="1" valign="center" zPosition="1"/>
+					<widget backgroundColor="#18188b" font="Regular;20" halign="center" position="596,3" render="Label" shadowColor="black" shadowOffset="-2,-2" size="196,46" source="key_blue" transparent="1" valign="center" zPosition="1"/>
+					<eLabel backgroundColor="#999999" position="6,53" size="786,1"/>
+					<widget backgroundColor="background" source="Titel" render="Label" position="8,516" size="786,26" foregroundColor="yellow" font="Regular;21" halign="center" transparent="1"/>
+					<widget backgroundColor="background" source="Titel2" render="Label" position="8,82" size="786,26" font="Regular;21" halign="center" transparent="1"/>
+					<widget backgroundColor="background" source="Titel3" render="Label" position="8,56" size="786,26" foregroundColor="yellow" font="Regular;21" halign="center" transparent="1"/>
+					<widget backgroundColor="background" source="Titel4" render="Label" position="8,545" size="786,26" font="Regular;21" halign="center" transparent="1"/>
+					<widget name="MainList" position="8,110" size="786,400" zPosition="3" foregroundColor="#ffffff" backgroundColor="#000000" foregroundColorSelected="#ffffff" backgroundColorSelected="#999999" font0="Regular;30" font1="Regular;30" font2="Regular;28" font3="Regular;30" itemHeight="133" setTime="15,40,100,45" setPict="150,40,70,70" setPictScale="1" setTemp="280,50,200,40" setTempUnits="280,95,150,40" setWindPict="550,75,35,35" setWindPictScale="1" setWind="600,50,95,40" setWindUnits="600,95,50,40" text1Pos="720,0,600,42" text2Pos="720,50,600,42" text3Pos="720,100,600,42" text4Pos="720,150,600,42" enableWrapAround="1" scrollbarMode="showOnDemand" transparent="1"/>
+					<eLabel backgroundColor="#999999" position="6,513" size="786,1"/>
+					<ePixmap position="683,576" size="40,20" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_text.png"/>
+					<ePixmap position="252,576" size="40,20" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_menu.png"/>
+					<ePixmap position="28,576" size="40,20" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_ok.png"/>
+					<ePixmap position="470,576" size="40,20" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_info.png"/>
+					<ePixmap position="756,576" size="40,20" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_next.png"/>
+					<ePixmap position="723,576" size="40,20" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_prev.png"/>
+					<ePixmap position="756,576" size="40,20" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_help.png"/>
+					<widget source="key_info" render="Label" position="514,576" size="166,23" font="Regular;20"/>
+					<widget source="key_menu" render="Label" position="294,576" size="166,23" font="Regular;20"/>
+					<widget source="key_ok" render="Label" position="69,576" size="166,23" font="Regular;20"/>
 				</screen>"""
 
 		Screen.__init__(self, session)
-		self.setup_title = _("Foreca Weather Forecast")
+		self.setTitle(_("Foreca Weather Forecast") + " " + _("v.") + VERSION)
 		self["MainList"] = MainMenuList()
 		self["Titel"] = StaticText()
 		self["Titel2"] = StaticText(_("Please wait ..."))
@@ -911,19 +909,14 @@ class ForecaPreview(Screen, HelpableScreen):
 		self["Titel4"] = StaticText()
 		self["Titel5"] = StaticText()
 		self["key_red"] = StaticText(_("Week"))
-		self["key_ok"] = StaticText(_("City"))
-		if config.plugins.foreca.citylabels.value is True:
-			self["key_green"] = StaticText(fav1.replace("_", " "))
-			self["key_yellow"] = StaticText(fav2.replace("_", " "))
-			self["key_blue"] = StaticText(start.replace("_", " "))
-		else:
-			self["key_green"] = StaticText(_("Favorite 1"))
-			self["key_yellow"] = StaticText(_("Favorite 2"))
-			self["key_blue"] = StaticText(_("Home"))
+		self["key_ok"] = StaticText(_("Config"))
+
+		self["key_green"] = StaticText('')
+		self["key_yellow"] = StaticText('')
+		self["key_blue"] = StaticText('')
+
 		self["key_info"] = StaticText(_("Legend"))
 		self["key_menu"] = StaticText(_("Maps"))
-		self.setTitle(_("Foreca Weather Forecast") + " " + _("Version ") + VERSION)
-
 		HelpableScreen.__init__(self)
 		self["actions"] = HelpableActionMap(
 			self, "ForecaActions",
@@ -931,7 +924,7 @@ class ForecaPreview(Screen, HelpableScreen):
 				"cancel": (self.exit, _("Exit - End")),
 				"menu": (self.Menu, _("Menu - Weather maps")),
 				"showEventInfo": (self.info, _("Info - Legend")),
-				"ok": (self.OK, _("OK - City")),
+				"ok": (self.PicSetupMenu, _("OK - Config")),
 				"left": (self.left, _("Left - Previous day")),
 				"right": (self.right, _("Right - Next day")),
 				"up": (self.up, _("Up - Previous page")),
@@ -939,11 +932,11 @@ class ForecaPreview(Screen, HelpableScreen):
 				"previous": (self.previousDay, _("Left arrow - Previous day")),
 				"next": (self.nextDay, _("Right arrow - Next day")),
 				"red": (self.red, _("Red - Weekoverview")),
-				# "shift_red": (self.shift_red, _("Red long - 10 day forecast")),
 				"green": (self.Fav1, _("Green - Favorite 1")),
 				"yellow": (self.Fav2, _("Yellow - Favorite 2")),
 				"blue": (self.Fav0, _("Blue - Home")),
-
+				"tv": (self.OK, _("Tv - City")),
+				"text": (self.OK, _("text - City")),
 				"0": (boundFunction(self.keyNumberGlobal, 0), _("0 - Today")),
 				"1": (boundFunction(self.keyNumberGlobal, 1), _("1 - Today + 1 day")),
 				"2": (boundFunction(self.keyNumberGlobal, 2), _("2 - Today + 2 days")),
@@ -957,10 +950,28 @@ class ForecaPreview(Screen, HelpableScreen):
 			},
 			-2
 		)
-		self.StartPageFirst()
+		self.onLayoutFinish.append(self.StartPageFirst)
+		self.onShow.append(self.update_button)
+
+	def update_button(self):
+		global fav1, fav2, start
+		if config.plugins.foreca.citylabels.value:
+			self["key_green"].setText(fav1.replace("_", " "))
+			self["key_yellow"].setText(fav2.replace("_", " "))
+			self["key_blue"].setText(start.replace("_", " "))
+		else:
+			self["key_green"].setText(_("Favorite 1"))
+			self["key_yellow"].setText(_("Favorite 2"))
+			self["key_blue"].setText(_("Home"))
+
+		self["Titel4"].text = self.ort[self.ort.rfind("/") + 1:].replace("_", " ")
+
+	def PicSetupMenu(self):
+		self.session.openWithCallback(self.OKCallback, PicSetup)
 
 	def StartPageFirst(self):
-		FAlog("StartPageFirst...")
+		if DEBUG:
+			FAlog("StartPageFirst...")
 		self.cacheDialog = self.session.instantiateDialog(ForecaPreviewCache)
 		self["MainList"].callback = self.deactivateCacheDialog
 		self.working = False
@@ -976,27 +987,34 @@ class ForecaPreview(Screen, HelpableScreen):
 		self["Titel5"].text = ""
 		self["Titel2"].text = _("Please wait ...")
 		self.working = False
-		FAlog("MainList show...")
+		if DEBUG:
+			FAlog("MainList show...")
 		self["MainList"].show
 		self.getPage()
 
 	def getPage(self, page=None):
-		FAlog("getPage...")
+		if DEBUG:
+			FAlog("getPage...")
 		self.cacheDialog.start()
 		self.working = True
 		if not page:
 			page = ""
 		url = "%s%s" % (MAIN_PAGE, page)
-		FAlog("page link:", url)
+		if DEBUG:
+			FAlog("page link:", url)
 		try:
 			req = Request(url, headers=HEADERS)
 			resp = urlopen(req, timeout=10)
-			self.getForecaPage(resp.read().decode('utf-8') if PY3 else resp.read())
+			self.getForecaPage(resp.read().decode("utf-8"))
 		except Exception as e:
 			self.error(repr(e))
 
+		self.update_button()
+		self.deactivateCacheDialog()
+
 	def error(self, err=""):
-		FAlog("getPage Error:", err)
+		if DEBUG:
+			FAlog("getPage Error:", err)
 		self.working = False
 		self.deactivateCacheDialog()
 
@@ -1019,103 +1037,121 @@ class ForecaPreview(Screen, HelpableScreen):
 			unlink(CACHE_PATH + "meteogram.png")
 		except Exception:
 			pass
-
-		self.close()
 		self.deactivateCacheDialog()
+		self.close()
 
 	def keyNumberGlobal(self, number):
 		self.tag = number
 		self.Zukunft(self.tag)
 
+	def titel(self):
+		self.setTitle(_("Foreca Weather Forecast") + " " + _("v.") + VERSION)
+
 	def Fav0(self):
 		global start
-		if exists(USR_PATH + "/startservice.cfg"):
-			with open(USR_PATH + "/startservice.cfg", "r") as file:
-				self.ort = file.readline().strip()
-		else:
-			self.ort = "United_Kingdom/London"
-		print(pluginPrintname, "home location:", self.ort)
-		start = self.ort[self.ort.rfind("/") + 1:len(self.ort)]
+		self.ort = config.plugins.foreca.home.value
+		start = self.ort[self.ort.rfind("/") + 1:]
+		print(pluginPrintname, "Fav0 ort location:", self.ort)
+		print(pluginPrintname, "Fav0 start:", start)
+		self.titel()
 		self.Zukunft(0)
 
 	def Fav1(self):
 		global fav1
-		if exists(USR_PATH + "/fav1.cfg"):
-			with open(USR_PATH + "/fav1.cfg", "r") as file:
-				self.ort = file.readline().strip()
-		else:
-			self.ort = "United_States/New_York_City"
-		fav1 = self.ort[self.ort.rfind("/") + 1:len(self.ort)]
-		FAlog("fav1 location:", fav1)
+		self.ort = config.plugins.foreca.fav1.value
+		fav1 = self.ort[self.ort.rfind("/") + 1:]
+		print(pluginPrintname, "Fav1 ort location:", self.ort)
+		print(pluginPrintname, "Fav1 fav1 location:", fav1)
+		self.titel()
 		self.Zukunft(0)
 
 	def Fav2(self):
 		global fav2
-		if exists(USR_PATH + "/fav2.cfg"):
-			with open(USR_PATH + "/fav2.cfg", "r") as file:
-				self.ort = file.readline().strip()
-		else:
-			self.ort = "Russia/Moskva"
-		fav2 = self.ort[self.ort.rfind("/") + 1:len(self.ort)]
-		FAlog("fav2 location:", fav2)
+		self.ort = config.plugins.foreca.fav2.value
+		fav2 = self.ort[self.ort.rfind("/") + 1:]
+		print(pluginPrintname, "Fav2 ort location:", self.ort)
+		print(pluginPrintname, "Fav2 fav2 location:", fav2)
+		self.titel()
 		self.Zukunft(0)
+
+	def futurdata(self, ztag=0):
+		global MAIN_PAGE
+		# Get the current date and time
+		now = datetime.now()
+		# Calculate new date by adding day tags
+		future_date = now + timedelta(days=ztag)
+		morgen = future_date.strftime("%Y%m%d")
+		return morgen
 
 	def Zukunft(self, ztag=0):
 		global MAIN_PAGE
-		# actual, local Time as Tuple
-		lt = localtime()
-		jahr, monat, tag = lt[0:3]
-		# Calculate future date
-		ntag = tag + ztag
-		zukunft = jahr, monat, ntag, 0, 0, 0, 0, 0, 0
-		morgen = mktime(zukunft)
-		lt = localtime(morgen)
-		jahr, monat, tag = lt[0:3]
-		morgen = "%04i%02i%02i" % (jahr, monat, tag)
+		morgen = self.futurdata(ztag)
+		MAIN_PAGE = "%s%s?lang=%s&details=%s&units=%s&tf=%s" % (
+			BASEURL,
+			pathname2url(self.ort),
+			LANGUAGE,
+			morgen,
+			config.plugins.foreca.units.value,
+			config.plugins.foreca.time.value
+		)
+		"""
+		if isinstance(MAIN_PAGE, unicode):
+			MAIN_PAGE = MAIN_PAGE.encode('utf-8')
+		"""
+		if DEBUG:
+			FAlog("day link:", MAIN_PAGE)
 
-		MAIN_PAGE = "%s%s?lang=%s&details=%s&units=%s&tf=%s" % (BASEURL, pathname2url(self.ort), LANGUAGE, morgen, config.plugins.foreca.units.value, config.plugins.foreca.time.value)
-		FAlog("day link:", MAIN_PAGE)
-
-		# Show in GUI
 		self.StartPage()
 
 	def info(self):
-		message = "%s" % (_(
-			"Server URL:    %s\n\n"
-			"<   >      =   Prognosis next/previous day\n"
-			"0 - 9      =   Prognosis (x) days from now\n\n"
-			"VOL+/-     =   Fast scroll 100 (City choice)\n"
-			"Bouquet+/- =   Fast scroll 500 (City choice)\n\n"
-			"Info       =   This information\n"
-			"Menu       =   Satellite photos and maps\n\n"
-			"Red        =   Temperature chart for the upcoming 5 days\n"
-			"Green      =   Go to Favorite 1\n"
-			"Yellow     =   Go to Favorite 2\n"
-			"Blue       =   Go to Home\n\n"
-			"Wind direction =   Arrow to right: Wind from the West\n"
-		) % BASEURL)
+		message = str("%s" % (_(
+			"Server URL:    %s\n"
+		) % BASEURL))
+		entries = [
+			(_("VERSION"), VERSION),
+			(_("Wind direction"), _("Arrow to right: Wind from the West")),
+			(_("Ok"), _("Go to Config Plugin")),
+			(_("Red"), _("Temperature chart for the upcoming 5 days")),
+			(_("Green"), _("Go to Favorite 1")),
+			(_("Yellow"), _("Go to Favorite 2")),
+			(_("Blue"), _("Go to Home")),
+			(_("Tv/Txt"), _("Go to City Panel")),
+			(_("Menu"), _("Satellite photos and maps")),
+			(_("Up/Down"), _("Previous/Next page")),
+			(_("<   >"), _("Prognosis Previous/Next day")),
+			(_("0 - 9"), _("Prognosis (x) days from now"))
+		]
+		message += format_message(entries)
 		self.session.open(MessageBox, message, MessageBox.TYPE_INFO)
 
 	def OK(self):
-		global city
-		panelmenu = ""
-		city = self.ort
-		self.session.openWithCallback(self.OKCallback, CityPanel, panelmenu)
+		self.city = self.ort
+		self.session.openWithCallback(self.OKCallback, CityPanel, self.city)
 
-	def OKCallback(self):
-		global city, fav1, fav2
-		self.ort = city
+	def OKCallback(self, callback=None):
+		global fav1, fav2
+		print('OKCallback callback=,', str(callback))
+		"""
+		fav1 = config.plugins.foreca.fav1.getValue()
+		fav2 = config.plugins.foreca.fav2.getValue()
+		start = config.plugins.foreca.home.getValue()
+		"""
+		fav1 = config.plugins.foreca.fav1.getValue()[config.plugins.foreca.fav1.getValue().rfind("/") + 1:]
+		fav2 = config.plugins.foreca.fav2.getValue()[config.plugins.foreca.fav2.getValue().rfind("/") + 1:]
+		# start = config.plugins.foreca.home.getValue()[config.plugins.foreca.home.getValue().rfind("/") + 1:]
+
+		self.ort = config.plugins.foreca.home.getValue()  # start
+		if callback is not None:
+			self.ort = callback
 		self.tag = 0
-		self.Zukunft(0)
-		if config.plugins.foreca.citylabels.value is True:
-			self["key_green"].setText(fav1.replace("_", " "))
-			self["key_yellow"].setText(fav2.replace("_", " "))
-			self["key_blue"].setText(start.replace("_", " "))
-		else:
-			self["key_green"].setText(_("Favorite 1"))
-			self["key_yellow"].setText(_("Favorite 2"))
-			self["key_blue"].setText(_("Home"))
-		FAlog("MenuCallback")
+		self.Zukunft(self.tag)
+
+		if DEBUG:
+			FAlog("MenuCallback")
+
+		self.update_button()
+
+		self.deactivateCacheDialog()
 
 	def left(self):
 		if not self.working and self.tag >= 1:
@@ -1145,28 +1181,28 @@ class ForecaPreview(Screen, HelpableScreen):
 		try:
 			if not self.working:
 				self.url = "%smeteogram.php?loc_id=%s&mglang=%s&units=%s&tf=%s/meteogram.png" % (BASEURL, self.loc_id, LANGUAGE, config.plugins.foreca.units.value, config.plugins.foreca.time.value)
-				print('self.url=', self.url)
+				print('red self.url=', self.url)
 				self.loadPicture(self.url)
 		except Exception as e:
 			print('error red=', e)
-
-	def shift_red(self):
-		pass
-		# self.session.openWithCallback(self.MenuCallback, Foreca10Days, self.ort)
 
 	def Menu(self):
 		self.session.openWithCallback(self.MenuCallback, SatPanel, self.ort)
 
 	def MenuCallback(self):
-		global menu, start, fav1, fav2
-		if config.plugins.foreca.citylabels.value is True:
-			self["key_green"].setText(fav1.replace("_", " "))
-			self["key_yellow"].setText(fav2.replace("_", " "))
-			self["key_blue"].setText(start.replace("_", " "))
-		else:
-			self["key_green"].setText(_("Favorite 1"))
-			self["key_yellow"].setText(_("Favorite 2"))
-			self["key_blue"].setText(_("Home"))
+		global start, fav1, fav2
+		"""
+		fav1 = str(config.plugins.foreca.fav1.value)
+		fav2 = str(config.plugins.foreca.fav2.value)
+		start = str(config.plugins.foreca.home.value)
+		"""
+		fav1 = config.plugins.foreca.fav1.getValue()[config.plugins.foreca.fav1.getValue().rfind("/") + 1:]
+		fav2 = config.plugins.foreca.fav2.getValue()[config.plugins.foreca.fav2.getValue().rfind("/") + 1:]
+		start = config.plugins.foreca.home.getValue()[config.plugins.foreca.home.getValue().rfind("/") + 1:]
+
+		self.city = config.plugins.foreca.home.getValue()
+		self.ort = config.plugins.foreca.home.getValue()  # self.city
+		self.update_button()
 
 	def loadPicture(self, url=""):
 		devicepath = CACHE_PATH + "meteogram.png"
@@ -1175,14 +1211,12 @@ class ForecaPreview(Screen, HelpableScreen):
 		with open(devicepath, 'wb') as f:
 			f.write(resp.read())
 		try:
-			from PIL import Image
-			import warnings
 			warnings.filterwarnings("ignore", "(?s).*iCCP.*", category=UserWarning)
 			img = Image.open(devicepath)
 			img.save(devicepath, icc_profile=None)
 		except Exception as e:
 			print("Errore nella rimozione del profilo ICC:", e)
-		self.session.open(PicView, devicepath, 0, False)
+		self.session.open(PicViewx, devicepath, 0, False, self.plaats)
 
 	def getForecaPage(self, html):
 		"""
@@ -1191,142 +1225,173 @@ class ForecaPreview(Screen, HelpableScreen):
 		"""
 		fulltext = compile(r"id: '(.*?)'", DOTALL)
 		id = fulltext.findall(html)
-		print(pluginPrintname, "fulltext=", fulltext, "id=", id)
+		if DEBUG:
+			FAlog("fulltext= %s id= %s" % (fulltext, id))
 		self.loc_id = str(id[0])
 		# <!-- START -->
-		print(pluginPrintname, "Start:" + str(len(html)))
+		if DEBUG:
+			FAlog("Start:" + str(len(html)))
 		fulltext = compile(r'<!-- START -->.+?<h6><span>(.+?)</h6>', DOTALL)
 		titel = fulltext.findall(html)
-		print(pluginPrintname, "fulltext=", fulltext, "titel=", titel)
-		titel[0] = str(sub(r'<[^>]*>', "", titel[0]))
-		translations = {
-			"Monday": _("Monday"), "Tuesday": _("Tuesday"), "Wednesday": _("Wednesday"),
-			"Thursday": _("Thursday"), "Friday": _("Friday"), "Saturday": _("Saturday"), "Sunday": _("Sunday"),
-			"January": _("January"), "February": _("February"), "March": _("March"), "April": _("April"),
-			"May": _("May"), "June": _("June"), "July": _("July"), "August": _("August"),
-			"September": _("September"), "October": _("October"), "November": _("November"), "December": _("December"),
-		}
-		textsechs = titel[0]
-		for key, value in translations.items():
-			textsechs = textsechs.replace(key, value)
+		if DEBUG:
+			FAlog("fulltext=%s titel= %s" % (fulltext, titel))
 
-		print(pluginPrintname, "titel[0]=", titel[0])
-		# <a href="/Austria/Linz?details=20110330">We</a>
+		titel[0] = str(sub(r'<[^>]*>', "", titel[0]))
+
+		if DEBUG:
+			FAlog("titel[0]=%s" % titel[0])
+
+		def translate_description_gettext(description, translation_dict):
+			cleaned_description = sub(r'[\t\r\n]', ' ', description).strip()
+			words = sub(r'([.,!?])', r' \1 ', cleaned_description).split()
+			translated_words = []
+			for word in words:
+				is_capitalized = word[0].isupper()
+				translated_word = translation_dict.get(word.lower(), word)
+				if is_capitalized:
+					translated_word = translated_word.capitalize()
+				translated_words.append(translated_word)
+				print("translated_words=", translated_words)
+			return ' '.join(translated_words)
+
+		translation_dict = self.load_translation_dict(lng)
+		titel[0] = translate_description_gettext(titel[0], translation_dict)
+
 		fulltext = compile(r'<!-- START -->(.+?)<h6>', DOTALL)
 		link = str(fulltext.findall(html))
-		print('Link=', link)
 		fulltext = compile(r'<a href=".+?>(.+?)<.+?', DOTALL)
 		tag = str(fulltext.findall(link))
 		# print "Day ", tag
+
 		# ---------- Wetterdaten -----------
 
 		# <div class="row clr0">
 		fulltext = compile(r'<!-- START -->(.+?)<div class="datecopy">', DOTALL)
 		html = str(fulltext.findall(html))
-
-		FAlog("searching .....")
+		if DEBUG:
+			FAlog("searching .....")
 		datalist = []
 
 		fulltext = compile(r'<a href="(.+?)".+?', DOTALL)
 		taglink = str(fulltext.findall(html))
-		# taglink = konvert_uml(taglink)
-		FAlog("Daylink ", taglink)
+		if DEBUG:
+			FAlog("Daylink %s" % taglink)
 
 		fulltext = compile(r'<a href=".+?>(.+?)<.+?', DOTALL)
 		tag = fulltext.findall(html)
 
-		trans = {
-			"Mon": _("Monday"), "Tue": _("Tuesday"), "Wed": _("Wednesday"),
-			"Thu": _("Thursday"), "Fri": _("Friday"), "Sat": _("Saturday"),
-			"Sun": _("Sunday"),
-		}
-		tag = tag[0]
-		for key, value in trans.items():
-			tag = tag.replace(key, value)
-
-		# Day ['Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun', 'Mon', 'Tue', 'Wed', '\\r\\n
-		FAlog("Day", str(tag))
+		if DEBUG:
+			FAlog("Day=%s" % str(tag))
 
 		# <div class="c0"> <strong>17:00</strong></div>
 		fulltime = compile(r'<div class="c0"> <strong>(.+?)<.+?', DOTALL)
 		zeit = fulltime.findall(html)
-		FAlog("Time", str(zeit))
+		if DEBUG:
+			FAlog("Time=%s" % str(zeit))
 
 		# <div class="c4">
 		# <span class="warm"><strong>+15&deg;</strong></span><br />
 		fulltime = compile(r'<div class="c4">.*?<strong>(.+?)&.+?', DOTALL)
 		temp = fulltime.findall(html)
-		FAlog("Temp", str(temp))
+
+		if DEBUG:
+			FAlog("Temp=%s" % str(temp))
 
 		# <div class="symbol_50x50d symbol_d000_50x50" title="clear"
 		fulltext = compile(r'<div class="symbol_50x50.+? symbol_(.+?)_50x50.+?', DOTALL)
 		thumbnails = fulltext.findall(html)
+		if DEBUG:
+			FAlog("thumbnails=%s" % str(thumbnails))
 
 		fulltext = compile(r'<div class="c3">.+? (.+?)<br />.+?', DOTALL)
 		description = fulltext.findall(html)
-		FAlog("description", str(description).lstrip("\r\n\t").lstrip())
+		if DEBUG:
+			FAlog("description=%s" % str(description).lstrip("\r\n\t").lstrip())
 
 		fulltext = compile(r'<div class="c3">.+?<br />(.+?)</strong>.+?', DOTALL)
 		feels = fulltext.findall(html)
-		FAlog("feels", str(feels).lstrip("\t").lstrip())
+		if DEBUG:
+			FAlog("feels=%s" % str(feels).lstrip("\t").lstrip())
 
 		fulltext = compile(r'<div class="c3">.+?</strong><br />(.+?)</.+?', DOTALL)
 		precip = fulltext.findall(html)
-		FAlog("precip", str(precip).lstrip("\t").lstrip())
+		if DEBUG:
+			FAlog("precip=%s" % str(precip).lstrip("\t").lstrip())
 
 		fulltext = compile(r'<div class="c3">.+?</strong><br />.+?</strong><br />(.+?)</', DOTALL)
 		humidity = fulltext.findall(html)
-		FAlog("humidity", str(humidity).lstrip("\t").lstrip())
+		if DEBUG:
+			FAlog("humidity=%s" % str(humidity).lstrip("\t").lstrip())
 
 		fulltext = compile(r'<div class="c2">.+?<img src="//img-b.foreca.net/s/symb-wind/(.+?).gif', DOTALL)
 		windDirection = fulltext.findall(html)
-		FAlog("windDirection", str(windDirection))
+		if DEBUG:
+			FAlog("windDirection=%s" % str(windDirection))
 
 		fulltext = compile(r'<div class="c2">.+?<strong>(.+?)<.+?', DOTALL)
 		windSpeed = fulltext.findall(html)
-		FAlog("windSpeed", str(windSpeed))
+		if DEBUG:
+			FAlog("windSpeed=%s" % str(windSpeed))
 
 		timeEntries = len(zeit)
 		x = 0
 		while x < timeEntries:
-			# description[x] = self.konvert_uml(str(sub(r'<[^>]*>', "", description[x])))
 			feels[x] = self.konvert_uml(str(sub(r'<[^>]*>', "", feels[x])))
 			precip[x] = self.konvert_uml(str(sub(r'<[^>]*>', "", precip[x])))
 			humidity[x] = self.konvert_uml(str(sub(r'<[^>]*>', "", humidity[x])))
 			windSpeed[x] = self.filter_dia(windSpeed[x])
+			windSpeed[x] = windSpeed[x].replace('kmh', 'km/h')
 
 			# translate_description
-			translation_dict = self.load_translation_dict(lng)
 			description[x] = self.konvert_uml(str(sub(r'<[^>]*>', "", description[x])))
 			description[x] = self.translate_description(description[x], translation_dict)
-			print("description[x]=", description[x])
+			# print("getForecaPage description[x]=", description[x])
 			# translate_description end
 
-			FAlog("weather: %s, %s, %s, %s, %s, %s, %s, %s" % (zeit[x], temp[x], windDirection[x], windSpeed[x], description[x], feels[x], precip[x], humidity[x]))
+			if DEBUG:
+				FAlog("weather: %s, %s, %s, %s, %s, %s, %s, %s" % (zeit[x], temp[x], windDirection[x], windSpeed[x], description[x], feels[x], precip[x], humidity[x]))
 			datalist.append([thumbnails[x], zeit[x], temp[x], windDirection[x], windSpeed[x], description[x], feels[x], precip[x], humidity[x]])
 			x += 1
 
-		self["Titel2"].text = titel[0].strip("'")
+		# Date management
+		self["Titel2"].text = ""  # titel[0].strip("'")
+		# translation date
 		datum = titel[0]
 		foundPos = datum.rfind(" ")
 		foundPos2 = datum.find(" ")
-		datum2 = datum[:foundPos2] + datum[foundPos:] + "." + datum[foundPos2:foundPos]
+		day_text = datum[:foundPos2].strip()
+		month_text = datum[foundPos2:foundPos].strip()
+		translated_day = translation_dict.get(day_text.lower(), day_text)
+		translated_month = translation_dict.get(month_text.lower(), month_text)
+		translated_day = translated_day.capitalize()
+		translated_month = translated_month.capitalize()
+		datum2 = translated_month + " " + datum[foundPos + 1:]
+		"""
+		ye = datetime.now()
+		year = ye.year
+		datum2 = str(year) + " " + datum2 + " " + translated_day
+		"""
+		datum2 = datum2 + " " + translated_day
+		# Location Management
 		foundPos = self.ort.find("/")
-		plaats = _(self.ort[0:foundPos]) + "-" + self.ort[foundPos + 1:len(self.ort)]
-		self["Titel"].text = plaats.replace("_", " ") + "  -  " + datum2
-		self["Titel4"].text = plaats.replace("_", " ")
-		self["Titel5"].text = datum2
-		self["Titel3"].text = self.ort[:foundPos].replace("_", " ") + "\r\n" + self.ort[foundPos + 1:].replace("_", " ") + "\r\n" + datum2
+		plaats = _(self.ort[0:foundPos]) + ", " + self.ort[foundPos + 1:len(self.ort)]
+		self.plaats = plaats.replace("_", " ")
+		print('getForecaPage self.plaats=', self.plaats)
+		# Set 'Titel' with formatted date
+		self["Titel"].text = datum2
+		self["Titel3"].text = ''
+		# Set 'Titel4' with location only
+		self["Titel5"].text = ''  # datum2
+
+		self.titel()
 		self["MainList"].SetList(datalist)
 		self["MainList"].selectionEnabled(0)
 		self["MainList"].show
-		self.deactivateCacheDialog()
 
 	def load_translation_dict(self, lng):
 		dict_file = resolveFilename(SCOPE_PLUGINS) + "Extensions/Foreca/dict/%sdict.txt" % lng
 		if not exists(dict_file):
 			dict_file = resolveFilename(SCOPE_PLUGINS) + "Extensions/Foreca/dict/endict.txt"
-		print('dict_file=', dict_file)
 		translation_dict = {}
 		with open(dict_file, 'r') as file:
 			for line in file:
@@ -1352,7 +1417,6 @@ class ForecaPreview(Screen, HelpableScreen):
 
 	def konvert_uml(self, text):
 		text = self.filter_dia(text)
-		# remove remaining control characters and return
 		return text[text.rfind("\\t") + 2:len(text)]
 
 
@@ -1362,6 +1426,7 @@ class ForecaPreview(Screen, HelpableScreen):
 
 
 class CityPanelList(MenuList):
+
 	def __init__(self, list, font0=22, font1=16, itemHeight=30, enableWrapAround=True):
 		MenuList.__init__(self, [], False, eListboxPythonMultiContent)
 		GUIComponent.__init__(self)
@@ -1375,6 +1440,7 @@ class CityPanelList(MenuList):
 
 # ---------------------- get skin attribs ----------------------------
 	def applySkin(self, desktop, parent):
+
 		def font(value):
 			self.font0 = parseFont(value, ((1, 1), (1, 1)))
 
@@ -1396,12 +1462,13 @@ class CityPanelList(MenuList):
 		def column(value):
 			self.column = int(value)
 
-		for (attrib, value) in list(self.skinAttributes):
-			try:
-				locals().get(attrib)(value)
-				self.skinAttributes.remove((attrib, value))
-			except Exception:
-				pass
+		if self.skinAttributes:
+			for (attrib, value) in list(self.skinAttributes):
+				try:
+					locals().get(attrib)(value)
+					self.skinAttributes.remove((attrib, value))
+				except Exception:
+					pass
 		self.l.setFont(0, self.font0)
 		self.l.setFont(1, self.font1)
 		self.l.setItemHeight(self.itemHeight)
@@ -1412,53 +1479,70 @@ class CityPanel(Screen, HelpableScreen):
 
 	def __init__(self, session, panelmenu):
 		self.session = session
+
 		if size_w == 1920:
 			self.skin = """
-			<screen name="CityPanel" position="center,center" size="1200,820" title="Select a city" >
-				<ePixmap pixmap="skin_default/buttons/green.png" position="10,5" scale="stretch" size="390,70" />
-				<ePixmap pixmap="skin_default/buttons/yellow.png" position="405,5" scale="stretch" size="390,70" />
-				<ePixmap pixmap="skin_default/buttons/blue.png" position="800,5" scale="stretch" size="390,70" />
-				<widget backgroundColor="#1f771f" font="Regular;30" halign="center" position="10,5" render="Label" shadowColor="black" shadowOffset="-2,-2" size="390,70" source="key_green" transparent="1" valign="center" zPosition="1" />
-				<widget backgroundColor="#a08500" font="Regular;30" halign="center" position="405,5" render="Label" shadowColor="black" shadowOffset="-2,-2" size="390,70" source="key_yellow" transparent="1" valign="center" zPosition="1" />
-				<widget backgroundColor="#18188b" font="Regular;30" halign="center" position="800,5" render="Label" shadowColor="black" shadowOffset="-2,-2" size="390,70" source="key_blue" transparent="1" valign="center" zPosition="1" />
-				<eLabel backgroundColor="grey" position="10,80" size="1180,1" />
-				<widget name="Mlist" itemHeight="35" position="10,90" size="1180,665" enableWrapAround="1" scrollbarMode="showOnDemand" />
-				<eLabel backgroundColor="grey" position="10,770" size="1180,1" />
-				<ePixmap position="710,780" size="60,30" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_ok.png" />
-				<widget source="key_ok" render="Label" position="790,780" size="250,35" font="Regular;30" />
-				<ePixmap position="1120,780" size="60,30" pixmap="skin_default/icons/help.png" />
+			<screen name="CityPanel" position="center,center" size="1200,900" title="Select a city">
+					<eLabel backgroundColor="red" position="10,65" size="295,6" zPosition="11" />
+					<eLabel backgroundColor="green" position="305,65" size="295,6" zPosition="11" />
+					<eLabel backgroundColor="yellow" position="600,65" size="295,6" zPosition="11" />
+					<eLabel backgroundColor="blue" position="895,65" size="295,6" zPosition="11" />
+					<widget backgroundColor="#9f1313" font="Regular;30" halign="center" position="10,5" render="Label" shadowColor="black" shadowOffset="-2,-2" size="295,70" source="key_red" transparent="1" valign="center" zPosition="1" />
+					<widget backgroundColor="#1f771f" font="Regular;30" halign="center" position="305,5" render="Label" shadowColor="black" shadowOffset="-2,-2" size="295,70" source="key_green" transparent="1" valign="center" zPosition="1" />
+					<widget backgroundColor="#a08500" font="Regular;30" halign="center" position="600,5" render="Label" shadowColor="black" shadowOffset="-2,-2" size="295,70" source="key_yellow" transparent="1" valign="center" zPosition="1" />
+					<widget backgroundColor="#18188b" font="Regular;30" halign="center" position="895,5" render="Label" shadowColor="black" shadowOffset="-2,-2" size="295,70" source="key_blue" transparent="1" valign="center" zPosition="1" />
+					<eLabel backgroundColor="#999999" position="10,80" size="1180,2" />
+					<widget name="Mlist" itemHeight="35" position="10,90" size="1180,665" enableWrapAround="1" scrollbarMode="showOnDemand" />
+					<eLabel backgroundColor="#999999" position="10,770" size="1180,2" />
+					<ePixmap position="1025,864" size="60,30" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_text.png" />
+					<ePixmap position="379,864" size="60,30" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_menu.png" />
+					<ePixmap position="42,864" size="60,30" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_ok.png" />
+					<ePixmap position="705,864" size="60,30" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_info.png" />
+					<ePixmap position="1135,864" size="60,30" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_next.png" />
+					<ePixmap position="1085,864" size="60,30" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_prev.png" />
 			</screen>"""
+
 		elif size_w == 2560:
 			self.skin = """
-			<screen name="CityPanel" position="center,center" size="1240,1040" title="Select a city" >
-				<ePixmap pixmap="skin_default/buttons/green.png" position="20,10" size="400,80" />
-				<ePixmap pixmap="skin_default/buttons/yellow.png" position="420,10" size="400,80" />
-				<ePixmap pixmap="skin_default/buttons/blue.png" position="820,10" size="400,80" />
-				<widget source="key_green" render="Label" position="20,10" size="400,80" zPosition="1" font="Regular;40" halign="center" valign="center" backgroundColor="#1f771f" transparent="1" shadowColor="black" shadowOffset="-2,-2" />
-				<widget source="key_yellow" render="Label" position="420,10" size="400,80" zPosition="1" font="Regular;40" halign="center" valign="center" backgroundColor="#a08500" transparent="1" shadowColor="black" shadowOffset="-2,-2" />
-				<widget source="key_blue" render="Label" position="820,10" size="400,80" zPosition="1" font="Regular;40" halign="center" valign="center" backgroundColor="#18188b" transparent="1" shadowColor="black" shadowOffset="-2,-2" />
-				<eLabel position="20,100" size="1200,2" backgroundColor="grey" />
-				<widget name="Mlist" itemHeight="60" position="20,110" size="1200,840" enableWrapAround="1" scrollbarMode="showOnDemand" />
-				<eLabel position="20,960" size="1200,2" backgroundColor="grey" />
-				<widget source="key_ok" render="Label" position="860,980" size="280,50" font="Regular;44" />
-				<ePixmap position="720,980" size="100,50" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_ok.png" />
-				<ePixmap position="1120,980" size="100,50" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_help.png" />
+			<screen name="CityPanel" position="center,center" size="1600,1200" title="Select a city">
+				<eLabel backgroundColor="red" position="14,87" size="394,8" zPosition="11"/>
+				<eLabel backgroundColor="green" position="407,87" size="394,8" zPosition="11"/>
+				<eLabel backgroundColor="yellow" position="800,87" size="394,8" zPosition="11"/>
+				<eLabel backgroundColor="blue" position="1194,87" size="394,8" zPosition="11"/>
+				<widget backgroundColor="#9f1313" font="Regular;40" halign="center" position="14,7" render="Label" shadowColor="black" shadowOffset="-2,-2" size="394,94" source="key_red" transparent="1" valign="center" zPosition="1"/>
+				<widget backgroundColor="#1f771f" font="Regular;40" halign="center" position="407,7" render="Label" shadowColor="black" shadowOffset="-2,-2" size="394,94" source="key_green" transparent="1" valign="center" zPosition="1"/>
+				<widget backgroundColor="#a08500" font="Regular;40" halign="center" position="800,7" render="Label" shadowColor="black" shadowOffset="-2,-2" size="394,94" source="key_yellow" transparent="1" valign="center" zPosition="1"/>
+				<widget backgroundColor="#18188b" font="Regular;40" halign="center" position="1194,7" render="Label" shadowColor="black" shadowOffset="-2,-2" size="394,94" source="key_blue" transparent="1" valign="center" zPosition="1"/>
+				<eLabel backgroundColor="#999999" position="14,107" size="1574,3"/>
+				<widget name="Mlist" itemHeight="47" position="14,120" size="1574,887" enableWrapAround="1" scrollbarMode="showOnDemand"/>
+				<eLabel backgroundColor="#999999" position="14,1027" size="1574,3"/>
+				<ePixmap position="1367,1152" size="80,40" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_text.png"/>
+				<ePixmap position="506,1152" size="80,40" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_menu.png"/>
+				<ePixmap position="56,1152" size="80,40" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_ok.png"/>
+				<ePixmap position="940,1152" size="80,40" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_info.png"/>
+				<ePixmap position="1514,1152" size="80,40" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_next.png"/>
+				<ePixmap position="1447,1152" size="80,40" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_prev.png"/>
 			</screen>"""
 		else:
 			self.skin = """
-			<screen name="CityPanel" position="center,center" size="620,520" title="Select a city" >
-				<ePixmap pixmap="skin_default/buttons/green.png" position="10,5" size="200,40" />
-				<ePixmap pixmap="skin_default/buttons/yellow.png" position="210,5" size="200,40" />
-				<ePixmap pixmap="skin_default/buttons/blue.png" position="410,5" size="200,40" />
-				<widget source="key_green" render="Label" position="10,5" size="200,40" zPosition="1" font="Regular;20" halign="center" valign="center" backgroundColor="#1f771f" transparent="1" shadowColor="black" shadowOffset="-2,-2" />
-				<widget source="key_yellow" render="Label" position="210,5" size="200,40" zPosition="1" font="Regular;20" halign="center" valign="center" backgroundColor="#a08500" transparent="1" shadowColor="black" shadowOffset="-2,-2" />
-				<widget source="key_blue" render="Label" position="410,5" size="200,40" zPosition="1" font="Regular;20" halign="center" valign="center" backgroundColor="#18188b" transparent="1" shadowColor="black" shadowOffset="-2,-2" />
-				<eLabel position="10,50" size="600,1" backgroundColor="grey" />
-				<widget name="Mlist" itemHeight="30" position="10,55" size="600,420" enableWrapAround="1" scrollbarMode="showOnDemand" />
-				<eLabel position="10,480" size="600,1" backgroundColor="grey" />
-				<widget source="key_ok" render="Label" position="430,490" size="140,25" font="Regular;22" />
-				<ePixmap position="370,490" size="50,25" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_ok.png" />
-				<ePixmap position="560,490" size="50,25" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_help.png" />
+			<screen name="CityPanel" position="center,center" size="800,600" title="Select a city">
+				<eLabel backgroundColor="red" position="6,43" size="196,4" zPosition="11"/>
+				<eLabel backgroundColor="green" position="203,43" size="196,4" zPosition="11"/>
+				<eLabel backgroundColor="yellow" position="400,43" size="196,4" zPosition="11"/>
+				<eLabel backgroundColor="blue" position="596,43" size="196,4" zPosition="11"/>
+				<widget backgroundColor="#9f1313" font="Regular;20" halign="center" position="6,3" render="Label" shadowColor="black" shadowOffset="-2,-2" size="196,46" source="key_red" transparent="1" valign="center" zPosition="1"/>
+				<widget backgroundColor="#1f771f" font="Regular;20" halign="center" position="203,3" render="Label" shadowColor="black" shadowOffset="-2,-2" size="196,46" source="key_green" transparent="1" valign="center" zPosition="1"/>
+				<widget backgroundColor="#a08500" font="Regular;20" halign="center" position="400,3" render="Label" shadowColor="black" shadowOffset="-2,-2" size="196,46" source="key_yellow" transparent="1" valign="center" zPosition="1"/>
+				<widget backgroundColor="#18188b" font="Regular;20" halign="center" position="596,3" render="Label" shadowColor="black" shadowOffset="-2,-2" size="196,46" source="key_blue" transparent="1" valign="center" zPosition="1"/>
+				<eLabel backgroundColor="#999999" position="6,53" size="786,1"/>
+				<widget name="Mlist" itemHeight="23" position="6,60" size="786,443" enableWrapAround="1" scrollbarMode="showOnDemand"/>
+				<eLabel backgroundColor="#999999" position="6,513" size="786,1"/>
+				<ePixmap position="683,576" size="40,20" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_text.png"/>
+				<ePixmap position="252,576" size="40,20" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_menu.png"/>
+				<ePixmap position="28,576" size="40,20" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_ok.png"/>
+				<ePixmap position="470,576" size="40,20" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_info.png"/>
+				<ePixmap position="756,576" size="40,20" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_next.png"/>
+				<ePixmap position="723,576" size="40,20" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_prev.png"/>
 			</screen>"""
 
 		Screen.__init__(self, session)
@@ -1466,19 +1550,25 @@ class CityPanel(Screen, HelpableScreen):
 		self.Mlist = []
 		self["Mlist"] = CityPanelList([])
 
-		self.onChangedEntry = []
-
+		self.city = panelmenu
 		self["key_green"] = StaticText(_("Favorite 1"))
 		self["key_yellow"] = StaticText(_("Favorite 2"))
 		self["key_blue"] = StaticText(_("Home"))
 		self["key_ok"] = StaticText(_("Forecast"))
+		self["key_red"] = StaticText(_("Keyboard"))
 		self.setTitle(_("Select a city"))
+
+		self.filtered_list = []
+		self.search_text = ""
+		self.search_ok = False
 
 		HelpableScreen.__init__(self)
 		self["actions"] = HelpableActionMap(
 			self, "ForecaActions",
 			{
+				"text": (self.openKeyboard, _("Keyboard")),
 				"cancel": (self.exit, _("Exit - End")),
+				"red": (self.openKeyboard, _("Open Keyboard")),
 				"left": (self.left, _("Left - Previous page")),
 				"right": (self.right, _("Right - Next page")),
 				"up": (self.up, _("Up - Previous")),
@@ -1491,20 +1581,77 @@ class CityPanel(Screen, HelpableScreen):
 				"prevBouquet": (self.jump500_up, _("Channel- - 500 forward")),
 				"volumeDown": (self.jump100_up, _("Volume- - 100 forward")),
 				"volumeUp": (self.jump100_down, _("Volume+ - 100 back")),
+				"showEventInfo": (self.info, _("Info - Legend")),
 			},
 			-2
 		)
 		self.onShown.append(self.prepare)
 
+	def info(self):
+		message = str("%s" % (_(
+			"Server URL:    %s\n"
+		) % BASEURL))
+		entries = [
+			(_("Server URL"), BASEURL),
+			(_("VERSION"), VERSION),
+			(_("Wind direction"), _("Arrow to right: Wind from the West")),
+			(_("Ok"), _("Go to Config Plugin")),
+			(_("Red"), _("Temperature chart for the upcoming 5 days")),
+			(_("Green"), _("Go to Favorite 1")),
+			(_("Yellow"), _("Go to Favorite 2")),
+			(_("Blue"), _("Go to Home")),
+			(_("Tv/Txt"), _("Go to City Panel")),
+			(_("Menu"), _("Satellite photos and maps")),
+			(_("Up/Down"), _("Previous/Next page")),
+			(_("<   >"), _("Prognosis Previous/Next day")),
+			(_("0 - 9"), _("Prognosis (x) days from now"))
+		]
+
+		message += format_message(entries)
+		self.session.open(MessageBox, message, MessageBox.TYPE_INFO)
+
+	def openKeyboard(self):
+		from Screens.VirtualKeyBoard import VirtualKeyBoard
+		self.session.openWithCallback(
+			self.filter,
+			VirtualKeyBoard,
+			title=_("Search your City"),
+			text='')
+
+	def filter(self, result):
+		if result:
+			try:
+				self.filtered_list = []
+				search = result.lower()
+				for item in self.Mlist:
+					city_name = item[0][0]
+					if search in city_name.lower():
+						self.search_ok = True
+						self.filtered_list.append(item)
+				if len(self.filtered_list) < 1:
+					self.session.open(MessageBox, _('No City found in search!!!'), MessageBox.TYPE_INFO, timeout=5)
+					return
+				else:
+					self['Mlist'].l.setList(self.filtered_list)
+					self['Mlist'].moveToIndex(0)
+					self["Mlist"].selectionEnabled(1)
+			except Exception as error:
+				print(error)
+				self.session.open(MessageBox, _('An error occurred during search!'), MessageBox.TYPE_ERROR, timeout=5)
+
 	def prepare(self):
 		self.maxidx = 0
+		self.Mlist = []
 		if exists(USR_PATH + "/City.cfg"):
 			with open(USR_PATH + "/City.cfg", "r") as content:
 				for line in content:
 					text = line.strip()
 					self.maxidx += 1
-					self.Mlist.append(self.CityEntryItem((text.replace("_", " "), text)))
-		self["Mlist"].l.setList(self.Mlist)
+					entry = (text.replace("_", " "), text)
+					self.Mlist.append(self.CityEntryItem(entry))
+
+		self.filtered_list = self.Mlist
+		self["Mlist"].l.setList(self.filtered_list)
 		self["Mlist"].selectionEnabled(1)
 
 	def jump500_up(self):
@@ -1554,61 +1701,63 @@ class CityPanel(Screen, HelpableScreen):
 		self.working = False
 
 	def exit(self):
-		global menu
-		menu = "stop"
-		self.close()
+		if self.search_ok is True:
+			self.search_ok = False
+		# self.city[self.city.rfind("/") + 1:]
+		self.close(self.city)
 
 	def ok(self):
-		global city
-		city = self['Mlist'].l.getCurrentSelection()[0][1]
-		FAlog("city= %s" % city, "CurrentSelection= %s" % self['Mlist'].l.getCurrentSelection())
-		self.exit()
+		self.city = sub(r" ", "_", self['Mlist'].l.getCurrentSelection()[0][1])
+		print("OK city= %s" % self.city, "CurrentSelection= %s" % self['Mlist'].l.getCurrentSelection())
+		if DEBUG:
+			FAlog("city= %s" % self.city, "CurrentSelection= %s" % self['Mlist'].l.getCurrentSelection())
+
+		self.close(self.city)
 
 	def blue(self):
 		global start
-		city = sub(r" ", "_", self['Mlist'].l.getCurrentSelection()[0][1])
-		FAlog("Home:", city)
-		config.plugins.foreca.home.value = city
+		self.city = sub(r" ", "_", self['Mlist'].l.getCurrentSelection()[0][1])
+		if DEBUG:
+			FAlog("Home:", self.city)
+		config.plugins.foreca.home.setValue(self.city)  # ✅ FIX
 		config.plugins.foreca.home.save()
-		with open(USR_PATH + "/startservice.cfg", "w") as fwrite:
-			fwrite.write(city)
-		start = city[city.rfind("/") + 1:len(city)]
-		message = "%s %s" % (_("This city is stored as home!\n\n                                  "), city)
+		configfile.save()
+		start = self.city[self.city.rfind("/") + 1:]
+		message = "%s %s" % (_("This city is stored as home!\n\n                                  "), self.city)
 		self.session.open(MessageBox, message, MessageBox.TYPE_INFO, timeout=8)
 
 	def green(self):
 		global fav1
-		city = sub(r" ", "_", self['Mlist'].l.getCurrentSelection()[0][1])
-		FAlog("Fav1:", city)
-		config.plugins.foreca.fav1.value = city
+		self.city = sub(r" ", "_", self['Mlist'].l.getCurrentSelection()[0][1])
+		if DEBUG:
+			FAlog("Fav1:", self.city)
+		config.plugins.foreca.fav1.setValue = (self.city)
 		config.plugins.foreca.fav1.save()
-		with open(USR_PATH + "/fav1.cfg", "w") as fwrite:
-			fwrite.write(city)
-		fav1 = city[city.rfind("/") + 1:len(city)]
-		message = "%s %s" % (_("This city is stored as favorite 1!\n\n                             "), city)
+		configfile.save()
+		# fav1 = self.city[self.city.rfind("/") + 1:len(self.city)]  # ✅ FIX
+		fav1 = self.city[self.city.rfind("/") + 1:]
+		message = "%s %s" % (_("This city is stored as favorite 1!\n\n                             "), self.city)
 		self.session.open(MessageBox, message, MessageBox.TYPE_INFO, timeout=8)
 
 	def yellow(self):
 		global fav2
-		city = sub(r" ", "_", self['Mlist'].l.getCurrentSelection()[0][1])
-		FAlog("Fav2:", city)
-		config.plugins.foreca.fav2.value = city
+		self.city = sub(r" ", "_", self['Mlist'].l.getCurrentSelection()[0][1])
+		if DEBUG:
+			FAlog("Fav2:", self.city)
+		config.plugins.foreca.fav2.setValue = (self.city)  # ✅ FIX
 		config.plugins.foreca.fav2.save()
-		with open(USR_PATH + "/fav2.cfg", "w") as fwrite:
-			fwrite.write(city)
-		fav2 = city[city.rfind("/") + 1:len(city)]
-		message = "%s %s" % (_("This city is stored as favorite 2!\n\n                             "), city)
+		configfile.save()
+		# fav2 = self.city[self.city.rfind("/") + 1:len(self.city)]
+		fav2 = self.city[self.city.rfind("/") + 1:]
+		message = "%s %s" % (_("This city is stored as favorite 2!\n\n                             "), self.city)
 		self.session.open(MessageBox, message, MessageBox.TYPE_INFO, timeout=8)
 
 	def CityEntryItem(self, entry):
 		mblau = self["Mlist"].foregroundColorSelected
 		weiss = self["Mlist"].foregroundColor
 		grau = self["Mlist"].backgroundColorSelected
-
 		itemHeight = self["Mlist"].itemHeight
-
 		col = self["Mlist"].column
-
 		res = [entry]
 		res.append(MultiContentEntryText(pos=(0, 0), size=(col, itemHeight), font=0, text="", color=weiss, color_sel=mblau, backcolor_sel=grau, flags=RT_VALIGN_CENTER))
 		res.append(MultiContentEntryText(pos=(col, 0), size=(1000, itemHeight), font=0, text=entry[0], color=weiss, color_sel=mblau, backcolor_sel=grau, flags=RT_VALIGN_CENTER))
@@ -1640,8 +1789,9 @@ class SatPanelList(MenuList):
 
 # ---------------------- get skin attribs ----------------------------
 	def applySkin(self, desktop, parent):
+
 		def warningWrongSkinParameter(string, wanted, given):
-			print("[ForecaPreview] wrong '%s' skin parameters. Must be %d arguments (%d given)" % (string, wanted, given))
+			print("[SatPanelList] wrong '%s' skin parameters. Must be %d arguments (%d given)" % (string, wanted, given))
 
 		def font(value):
 			self.font0 = parseFont(value, ((1, 1), (1, 1)))
@@ -1676,6 +1826,7 @@ class SatPanelList(MenuList):
 				self.skinAttributes.remove((attrib, value))
 			except Exception:
 				pass
+
 		self.l.setFont(0, self.font0)
 		self.l.setFont(1, self.font1)
 		self.l.setItemHeight(self.itemHeight)
@@ -1689,52 +1840,71 @@ class SatPanel(Screen, HelpableScreen):
 
 		if size_w == 1920:
 			self.skin = """
-				<screen name="SatPanel" position="center,center" size="1200,820" title="Satellite photos" >
-					<ePixmap pixmap="skin_default/buttons/red.png" position="10,5" size="295,70" />
-					<ePixmap pixmap="skin_default/buttons/green.png" position="305,5" size="295,70" />
-					<ePixmap pixmap="skin_default/buttons/yellow.png" position="600,5" size="295,70" />
-					<ePixmap pixmap="skin_default/buttons/blue.png" position="895,5" size="295,70" />
+				<screen name="SatPanel" position="center,center" size="1200,900" title="Satellite photos" >
+					<eLabel backgroundColor="red" position="10,65" size="295,6" zPosition="11" />
+					<eLabel backgroundColor="green" position="305,65" size="295,6" zPosition="11" />
+					<eLabel backgroundColor="yellow" position="600,65" size="295,6" zPosition="11" />
+					<eLabel backgroundColor="blue" position="895,65" size="295,6" zPosition="11" />
 					<widget backgroundColor="#9f1313" font="Regular;30" halign="center" position="10,5" render="Label" shadowColor="black" shadowOffset="-2,-2" size="295,70" source="key_red" transparent="1" valign="center" zPosition="1" />
 					<widget backgroundColor="#1f771f" font="Regular;30" halign="center" position="305,5" render="Label" shadowColor="black" shadowOffset="-2,-2" size="295,70" source="key_green" transparent="1" valign="center" zPosition="1" />
 					<widget backgroundColor="#a08500" font="Regular;30" halign="center" position="600,5" render="Label" shadowColor="black" shadowOffset="-2,-2" size="295,70" source="key_yellow" transparent="1" valign="center" zPosition="1" />
 					<widget backgroundColor="#18188b" font="Regular;30" halign="center" position="895,5" render="Label" shadowColor="black" shadowOffset="-2,-2" size="295,70" source="key_blue" transparent="1" valign="center" zPosition="1" />
-					<eLabel backgroundColor="grey" position="10,80" size="1180,1" />
-					<widget enableWrapAround="1" name="Mlist" itemHeight="144" position="10,90" scrollbarMode="showOnDemand" size="1180,720" />
+					<eLabel backgroundColor="#999999" position="10,80" size="1180,2" />
+					<widget enableWrapAround="1" name="Mlist" itemHeight="145" position="10,90" scrollbarMode="showOnDemand" size="1180,720" />
+					<eLabel backgroundColor="#999999" position="10,770" size="1180,2" />
+					<ePixmap position="1025,864" size="60,30" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_text.png" />
+					<ePixmap position="379,864" size="60,30" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_menu.png" />
+					<ePixmap position="42,864" size="60,30" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_ok.png" />
+					<ePixmap position="705,864" size="60,30" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_info.png" />
+					<ePixmap position="1135,864" size="60,30" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_next.png" />
+					<ePixmap position="1085,864" size="60,30" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_prev.png" />
 				</screen>"""
 		elif size_w == 2560:
 			self.skin = """
-				<screen name="SatPanel" position="center,center" size="1640,1080" title="Satellite photos" >
-					<ePixmap pixmap="skin_default/buttons/red.png" position="20,10" size="400,80" />
-					<ePixmap pixmap="skin_default/buttons/green.png" position="420,10" size="400,80" />
-					<ePixmap pixmap="skin_default/buttons/yellow.png" position="820,10" size="400,80" />
-					<ePixmap pixmap="skin_default/buttons/blue.png" position="1220,10" size="400,80" />
-					<widget source="key_red" render="Label" position="20,10" size="400,80" zPosition="1" font="Regular;40" halign="center" valign="center" backgroundColor="#9f1313" transparent="1" shadowColor="black" shadowOffset="-2,-2" />
-					<widget source="key_green" render="Label" position="420,10" size="400,80" zPosition="1" font="Regular;40" halign="center" valign="center" backgroundColor="#1f771f" transparent="1" shadowColor="black" shadowOffset="-2,-2" />
-					<widget source="key_yellow" render="Label" position="820,10" size="400,80" zPosition="1" font="Regular;40" halign="center" valign="center" backgroundColor="#a08500" transparent="1" shadowColor="black" shadowOffset="-2,-2" />
-					<widget source="key_blue" render="Label" position="1220,10" size="400,80" zPosition="1" font="Regular;40" halign="center" valign="center" backgroundColor="#18188b" transparent="1" shadowColor="black" shadowOffset="-2,-2" />
-					<eLabel position="20,100" size="1600,2" backgroundColor="grey" />
-					<widget name="Mlist" itemHeight="320" position="20,110" size="1600,960" enableWrapAround="1" scrollbarMode="showOnDemand" />
+				<screen name="SatPanel" position="center,center" size="1600,1200" title="Satellite photos">
+					<eLabel backgroundColor="red" position="14,87" size="394,8" zPosition="11"/>
+					<eLabel backgroundColor="green" position="407,87" size="394,8" zPosition="11"/>
+					<eLabel backgroundColor="yellow" position="800,87" size="394,8" zPosition="11"/>
+					<eLabel backgroundColor="blue" position="1194,87" size="394,8" zPosition="11"/>
+					<widget backgroundColor="#9f1313" font="Regular;40" halign="center" position="14,7" render="Label" shadowColor="black" shadowOffset="-2,-2" size="394,94" source="key_red" transparent="1" valign="center" zPosition="1"/>
+					<widget backgroundColor="#1f771f" font="Regular;40" halign="center" position="407,7" render="Label" shadowColor="black" shadowOffset="-2,-2" size="394,94" source="key_green" transparent="1" valign="center" zPosition="1"/>
+					<widget backgroundColor="#a08500" font="Regular;40" halign="center" position="800,7" render="Label" shadowColor="black" shadowOffset="-2,-2" size="394,94" source="key_yellow" transparent="1" valign="center" zPosition="1"/>
+					<widget backgroundColor="#18188b" font="Regular;40" halign="center" position="1194,7" render="Label" shadowColor="black" shadowOffset="-2,-2" size="394,94" source="key_blue" transparent="1" valign="center" zPosition="1"/>
+					<eLabel backgroundColor="#999999" position="14,107" size="1574,3"/>
+					<widget enableWrapAround="1" name="Mlist" itemHeight="194" position="14,120" scrollbarMode="showOnDemand" size="1574,960"/>
+					<eLabel backgroundColor="#999999" position="14,1027" size="1574,3"/>
+					<ePixmap position="1367,1152" size="80,40" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_text.png"/>
+					<ePixmap position="506,1152" size="80,40" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_menu.png"/>
+					<ePixmap position="56,1152" size="80,40" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_ok.png"/>
+					<ePixmap position="940,1152" size="80,40" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_info.png"/>
+					<ePixmap position="1514,1152" size="80,40" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_next.png"/>
+					<ePixmap position="1447,1152" size="80,40" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_prev.png"/>
 				</screen>"""
 		else:
 			self.skin = """
-				<screen name="SatPanel" position="center,center" size="630,440" title="Satellite photos" backgroundColor="#40000000" >
-					<widget name="Mlist" position="10,10" size="600,370" zPosition="3" backgroundColor="#40000000"  backgroundColorSelected="#565656" enableWrapAround="1" scrollbarMode="showOnDemand" />
-					<eLabel position="0,385" zPosition="2" size="630,1" backgroundColor="#c1cdc1" />
-					<ePixmap position="2,400" size="36,20" pixmap="skin_default/buttons/key_red.png" transparent="1" alphatest="on" />
-					<ePixmap position="160,400" size="36,20" pixmap="skin_default/buttons/key_green.png" transparent="1" alphatest="on" />
-					<ePixmap position="300,400" size="36,20" pixmap="skin_default/buttons/key_yellow.png" transparent="1" alphatest="on" />
-					<ePixmap position="460,400" size="36,20" pixmap="skin_default/buttons/key_blue.png" transparent="1" alphatest="on" />
-					<widget source="key_red" render="Label" position="40,397" zPosition="2" size="124,45" font="Regular;20" valign="center" halign="left" transparent="1" />
-					<widget source="key_green" render="Label" position="198,397" zPosition="2" size="140,45" font="Regular;20" valign="center" halign="left" transparent="1" />
-					<widget source="key_yellow" render="Label" position="338,397" zPosition="2" size="140,45" font="Regular;20" valign="center" halign="left" transparent="1" />
-					<widget source="key_blue" render="Label" position="498,397" zPosition="2" size="142,45" font="Regular;20" valign="center" halign="left" transparent="1" />
-				 </screen>"""
+				<screen name="SatPanel" position="center,center" size="800,600" title="Satellite photos">
+					<eLabel backgroundColor="red" position="6,43" size="196,4" zPosition="11"/>
+					<eLabel backgroundColor="green" position="203,43" size="196,4" zPosition="11"/>
+					<eLabel backgroundColor="yellow" position="400,43" size="196,4" zPosition="11"/>
+					<eLabel backgroundColor="blue" position="596,43" size="196,4" zPosition="11"/>
+					<widget backgroundColor="#9f1313" font="Regular;20" halign="center" position="6,3" render="Label" shadowColor="black" shadowOffset="-2,-2" size="196,46" source="key_red" transparent="1" valign="center" zPosition="1"/>
+					<widget backgroundColor="#1f771f" font="Regular;20" halign="center" position="203,3" render="Label" shadowColor="black" shadowOffset="-2,-2" size="196,46" source="key_green" transparent="1" valign="center" zPosition="1"/>
+					<widget backgroundColor="#a08500" font="Regular;20" halign="center" position="400,3" render="Label" shadowColor="black" shadowOffset="-2,-2" size="196,46" source="key_yellow" transparent="1" valign="center" zPosition="1"/>
+					<widget backgroundColor="#18188b" font="Regular;20" halign="center" position="596,3" render="Label" shadowColor="black" shadowOffset="-2,-2" size="196,46" source="key_blue" transparent="1" valign="center" zPosition="1"/>
+					<eLabel backgroundColor="#999999" position="6,53" size="786,1"/>
+					<widget enableWrapAround="1" name="Mlist" itemHeight="96" position="6,60" scrollbarMode="showOnDemand" size="786,480"/>
+					<eLabel backgroundColor="#999999" position="6,513" size="786,1"/>
+					<ePixmap position="683,576" size="40,20" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_text.png"/>
+					<ePixmap position="252,576" size="40,20" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_menu.png"/>
+					<ePixmap position="28,576" size="40,20" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_ok.png"/>
+					<ePixmap position="470,576" size="40,20" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_info.png"/>
+					<ePixmap position="756,576" size="40,20" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_next.png"/>
+					<ePixmap position="723,576" size="40,20" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_prev.png"/>
+				</screen>"""
 
 		Screen.__init__(self, session)
 		self.setup_title = _("Satellite photos")
 		self["Mlist"] = SatPanelList([])
-
-		self.onChangedEntry = []
 		self.ort = ort
 		self.loc_id = ''
 		self["key_red"] = StaticText(_("Continents"))
@@ -1742,7 +1912,6 @@ class SatPanel(Screen, HelpableScreen):
 		self["key_yellow"] = StaticText(_("Germany"))
 		self["key_blue"] = StaticText(_("Settings"))
 		self.setTitle(_("Satellite photos"))
-
 		HelpableScreen.__init__(self)
 		self["actions"] = HelpableActionMap(
 			self, "ForecaActions",
@@ -1752,6 +1921,8 @@ class SatPanel(Screen, HelpableScreen):
 				"right": (self.right, _("Right - Next page")),
 				"up": (self.up, _("Up - Previous")),
 				"down": (self.down, _("Down - Next")),
+				"showEventInfo": (self.info, _("Info - Legend")),
+				"info": (self.info, _("Info - Legend")),
 				"red": (self.MapsContinents, _("Red - Continents")),
 				"green": (self.MapsEurope, _("Green - Europe")),
 				"yellow": (self.MapsGermany, _("Yellow - Germany")),
@@ -1762,13 +1933,32 @@ class SatPanel(Screen, HelpableScreen):
 		)
 		self.onShown.append(self.prepare)
 
+	def info(self):
+		message = str("%s" % (_(
+			"Server URL:    %s\n"
+		) % BASEURL))
+		entries = [
+			("VERSION", "%s" % VERSION),  # Non serve la traduzione
+			(_("Ok"), _("Show map")),
+			(_("Red"), _("Continents")),
+			(_("Green"), _("Europe")),
+			(_("Yellow"), _("Germany")),
+			(_("Blue"), _("Settings")),
+			(_("Txt/Red"), _("Open Keyboard")),
+			(_("Up/Down"), _("Previous/Next")),
+			(_("<   >"), _("Previous/Next page")),
+			(_("Info"), _("This information"))
+		]
+		message += format_message(entries)
+		self.session.open(MessageBox, message, MessageBox.TYPE_INFO)
+
 	def prepare(self):
 		self.Mlist = []
-		self.Mlist.append(self.SatEntryItem((_("Weather map Video"), 'sat')))
+		self.Mlist.append(self.SatEntryItem((_("Air pressure"), 'pressure')))
+		self.Mlist.append(self.SatEntryItem((_("Cloudcover Video"), 'cloud')))
 		self.Mlist.append(self.SatEntryItem((_("Showerradar Video"), 'rain')))
 		self.Mlist.append(self.SatEntryItem((_("Temperature Video"), 'temp')))
-		self.Mlist.append(self.SatEntryItem((_("Cloudcover Video"), 'cloud')))
-		self.Mlist.append(self.SatEntryItem((_("Air pressure"), 'pressure')))
+		self.Mlist.append(self.SatEntryItem((_("Weather map Video"), 'sat')))
 		self.Mlist.append(self.SatEntryItem((_("Eumetsat"), 'eumetsat')))
 
 		self["Mlist"].l.setList(self.Mlist)
@@ -1789,8 +1979,6 @@ class SatPanel(Screen, HelpableScreen):
 		self["Mlist"].pageDown()
 
 	def exit(self):
-		global menu
-		menu = "stop"
 		self.close()
 
 	def deactivateCacheDialog(self):
@@ -1799,11 +1987,11 @@ class SatPanel(Screen, HelpableScreen):
 
 	def ok(self):
 		menu = self['Mlist'].l.getCurrentSelection()[0][1]
-		FAlog("SatPanel menu= %s" % menu, "CurrentSelection= %s" % self['Mlist'].l.getCurrentSelection())
+		if DEBUG:
+			FAlog("SatPanel menu= %s" % menu, "CurrentSelection= %s" % self['Mlist'].l.getCurrentSelection())
 
 		self.cacheDialog = self.session.instantiateDialog(ForecaPreviewCache)
 		self.cacheDialog.start()
-
 		self.SatBild()
 
 	def MapsGermany(self):
@@ -1815,8 +2003,8 @@ class SatPanel(Screen, HelpableScreen):
 			(_("Bremen"), 'bremen'),
 			(_("Hamburg"), 'hamburg'),
 			(_("Hesse"), 'hessen'),
-			(_("Mecklenburg-Vorpommern"), 'mecklenburgvorpommern'),
 			(_("Lower Saxony"), 'niedersachsen'),
+			(_("Mecklenburg-Vorpommern"), 'mecklenburgvorpommern'),
 			(_("North Rhine-Westphalia"), 'nordrheinwestfalen'),
 			(_("Rhineland-Palatine"), 'rheinlandpfalz'),
 			(_("Saarland"), 'saarland'),
@@ -1863,19 +2051,20 @@ class SatPanel(Screen, HelpableScreen):
 	def MapsContinents(self):
 		self.Mlist = []
 		self.Mlist.append(self.SatEntryItem((_("Europe"), 'europa')))
+		self.Mlist.append(self.SatEntryItem((_("Middle East"), 'naherosten')))
 		self.Mlist.append(self.SatEntryItem((_("North Africa"), 'afrika_nord')))
 		self.Mlist.append(self.SatEntryItem((_("South Africa"), 'afrika_sued')))
 		self.Mlist.append(self.SatEntryItem((_("North America"), 'nordamerika')))
 		self.Mlist.append(self.SatEntryItem((_("Middle America"), 'mittelamerika')))
 		self.Mlist.append(self.SatEntryItem((_("South America"), 'suedamerika')))
-		self.Mlist.append(self.SatEntryItem((_("Middle East"), 'naherosten')))
 		self.Mlist.append(self.SatEntryItem((_("East Asia"), 'ostasien')))
-		self.Mlist.append(self.SatEntryItem((_("Southeast Asia"), 'suedostasien')))
 		self.Mlist.append(self.SatEntryItem((_("Middle Asia"), 'zentralasien')))
+		self.Mlist.append(self.SatEntryItem((_("Southeast Asia"), 'suedostasien')))
 		self.Mlist.append(self.SatEntryItem((_("Australia"), 'australienundozeanien')))
 		self.session.open(SatPanelb, self.ort, _("Continents"), self.Mlist)
 
 # ------------------------------------------------------------------------------------------
+
 	def SatEntryItem(self, entry):
 		pict_scale = self["Mlist"].pictScale
 		ItemSkin = self["Mlist"].itemHeight
@@ -1884,20 +2073,32 @@ class SatPanel(Screen, HelpableScreen):
 		grau = self["Mlist"].backgroundColorSelected
 
 		res = [entry]
-		FAlog("entry=", entry)
+		if DEBUG:
+			FAlog("entry=", entry)
+
 		thumb = LoadPixmap(THUMB_PATH + entry[1] + ".png")
 		thumb_width = 200
 		if pict_scale:
 			thumb_width = thumb.size().width()
-		res.append(MultiContentEntryPixmapAlphaTest(pos=(2, 2), size=(thumb_width, ItemSkin - 4), png=thumb))  # png vorn
+
+		res.append(MultiContentEntryPixmapAlphaTest(pos=(2, 2), size=(thumb_width, ItemSkin - 4), png=thumb))
 		x, y, w, h = self["Mlist"].textPos
 		res.append(MultiContentEntryText(pos=(x, y), size=(w, h), font=0, text=entry[0], color=weiss, color_sel=mblau, backcolor_sel=grau, flags=RT_VALIGN_CENTER))
 		return res
 
-	def PicSetupMenu(self):
-		self.session.open(PicSetup)
-
 # ------------------------------------------------------------------------------------------
+
+	def PicSetupMenu(self):
+		self.session.openWithCallback(self.OKCallback, PicSetup)
+
+	def OKCallback(self, callback=None):
+		global fav1, fav2, start
+		fav1 = str(config.plugins.foreca.fav1.getValue())
+		fav2 = str(config.plugins.foreca.fav2.getValue())
+		start = str(config.plugins.foreca.home.getValue())
+		city = start
+		self.ort = city
+		self.exit()
 
 	def fetch_url(self, x):
 		menu = self['Mlist'].l.getCurrentSelection()[0][1]
@@ -1910,7 +2111,8 @@ class SatPanel(Screen, HelpableScreen):
 		global foundz
 		foundz = 'jpg'
 		foundPos = url.find("0000.jpg")
-		print("x= {}".format(x), "url= {}, foundPos= {}".format(url, foundPos))
+		if DEBUG:
+			FAlog("x= {}".format(x), "url= {}, foundPos= {}".format(url, foundPos))
 		if foundPos == -1:
 			foundPos = url.find(".jpg")
 		if foundPos == -1:
@@ -1919,7 +2121,8 @@ class SatPanel(Screen, HelpableScreen):
 		file = url[foundPos - 10:foundPos]
 		file2 = file[0:4] + "-" + file[4:6] + "-" + file[6:8] + " - " + file[8:10] + " " + _("h")
 		file2 = file2.replace(" ", "")
-		print("file= %s" % file, "file2= %s" % file2)
+		if DEBUG:
+			FAlog("file= %s file2= %s" % (file, file2))
 		req = Request(url, headers=HEADERS)
 		resp = urlopen(req, timeout=10)
 		with open("%s%s.%s" % (CACHE_PATH, file2, foundz), 'wb') as f:
@@ -1932,84 +2135,85 @@ class SatPanel(Screen, HelpableScreen):
 		try:
 			response = requests.get(base_url + "/en-gb/continent/eu", headers=HEADERS, timeout=10)
 			response.raise_for_status()
-			html = response.text if PY3 else response.content
+			html = response.text  # In PY3 è già una stringa decodificata
 		except requests.RequestException as e:
 			print("Error while page download: %s" % str(e))
 			return
+
 		pattern = r'<li class=".*?">\s*<a .*?href="([^"]+)".*?>\s*(.*?)\s*</a>'
 		matches = findall(pattern, html)
-
 		seen_links = set()
 		menu = []
 
 		for href, title in matches:
-			if 'satellite' in title.lower():
+			if "satellite" in title.lower():
 				link = base_url + href
 				if link not in seen_links:
 					menu.append((title.strip(), link))
 					seen_links.add(link)
 
 		def returnToChoiceBox(result=None):
-			self.session.openWithCallback(boxAction, ChoiceBox, title=text, list=menu, windowTitle=_("eumetsat menu"))
+			self.session.openWithCallback(boxAction, ChoiceBox, title=text, list=menu)
 
 		def boxAction(choice):
 			if choice:
 				title, url = choice
 				devicepath = join(CACHE_PATH, "meteogram.png")
-
 				try:
 					req = Request(url, headers=HEADERS)
 					resp = urlopen(req, timeout=10)
-					content = resp.read().decode('utf-8') if PY3 else resp.read()
+					content = resp.read().decode("utf-8")  # Solo per PY3
 					pattern = r'<div class="absolute w-full h-full overflow-hidden z-10">.*?<img .*?alt="satLayer".*?src="([^"]+)".*?>'
 					matches = findall(pattern, content, DOTALL)
 					if matches:
 						chosen_link = matches[0]
-						print("Link select:", chosen_link)
 						if not chosen_link.startswith("http"):
 							chosen_link = base_url + chosen_link
-
 						try:
 							img_response = requests.get(chosen_link, headers=HEADERS, timeout=10)
 							img = Image.open(BytesIO(img_response.content))
 							img = img.convert("RGB")  # Rimuove ICC
 							img.save(devicepath, "PNG")
-							FAlog("Image dimensions: {}x{}".format(img.width, img.height))
-							self.session.openWithCallback(returnToChoiceBox, PicView, devicepath, 0, False)
+							if DEBUG:
+								FAlog("Image dimensions: {}x{}".format(img.width, img.height))
+							self.session.openWithCallback(returnToChoiceBox, PicViewx, devicepath, 0, False, None)
 						except requests.RequestException as e:
-							FAlog("Error downloading image: %s" % str(e))
+							if DEBUG:
+								FAlog("Error downloading image: %s" % str(e))
 							returnToChoiceBox()
 					else:
-						FAlog("Image not found on the page.")
+						if DEBUG:
+							FAlog("Image not found on the page.")
 						returnToChoiceBox()
 				except Exception as e:
-					FAlog("Error processing page: %s" % str(e))
+					if DEBUG:
+						FAlog("Error processing page: %s" % str(e))
 					returnToChoiceBox()
 
 		if len(menu) > 0:
-			self.session.openWithCallback(boxAction, ChoiceBox, title=text, list=menu, windowTitle=_("eumetsat menu"))
+			self.session.openWithCallback(boxAction, ChoiceBox, title=text, list=menu)
 
 	def SatBild(self):
 		try:
 			current_selection = self['Mlist'].l.getCurrentSelection()
 			if not current_selection or not current_selection[0] or len(current_selection[0]) < 2:
-				FAlog("SatBild Error: Invalid selection in CurrentSelection", str(current_selection))
+				if DEBUG:
+					FAlog("SatBild Error: Invalid selection in CurrentSelection", str(current_selection))
 				return
 			menu = current_selection[0][1]
-			FAlog("SatBild menu= %s" % menu, "CurrentSelection= %s" % current_selection)
-
+			if DEBUG:
+				FAlog("SatBild menu= %s" % menu, "CurrentSelection= %s" % current_selection)
 			self.deactivateCacheDialog()
-
 			if menu == "eumetsat":
 				self.doContext()
 			else:
 				try:
-					# devicepath = CACHE_PATH + "sat.html"  # "/var/volatile/tmp/sat.html"
 					url = "%s%s?map=%s" % (BASEURL, pathname2url(self.ort), menu)
-					FAlog("VIDEO URL map = %s" % url)
+					if DEBUG:
+						FAlog("VIDEO URL map = %s" % url)
 					req = Request(url, headers=HEADERS)
 					resp = urlopen(req, timeout=10)
-					content = (resp.read().decode('utf-8') if PY3 else resp.read())
+					content = (resp.read().decode('utf-8'))
 					start_pattern = r"var urltemplate"
 					end_pattern = r"var timehdrs"
 					section_pattern = compile(r"%s(.*?)%s" % (start_pattern, end_pattern), DOTALL)
@@ -2020,19 +2224,23 @@ class SatPanel(Screen, HelpableScreen):
 						fulltext = compile(r'(\/\/cache.*?\.(jpg|png))', DOTALL)
 						urls = fulltext.findall(section_content)
 						for url, ext in urls:
-							full_url = 'https:' + url  # Ricostruisci l'URL completo
-							FAlog("Valid URL:", full_url)
+							full_url = 'https:' + url
+							if DEBUG:
+								FAlog("Valid URL:", full_url)
 							self.fetch_url(full_url)
 						self.session.open(View_Slideshow, 0, True)
 					else:
-						FAlog("SatBild Warning: No image URLs found in page content.")
+						if DEBUG:
+							FAlog("SatBild Warning: No image URLs found in page content.")
 						self.session.open(MessageBox, _("No satellite images found."), MessageBox.TYPE_INFO)
 						return
 				except Exception as e:
 					self.session.open(MessageBox, _("Failed to process satellite data: %s" % str(e)), MessageBox.TYPE_ERROR)
 		except Exception as e:
-			FAlog("SatBild Critical Error", str(e))
+			if DEBUG:
+				FAlog("SatBild Critical Error", str(e))
 			self.session.open(MessageBox, _("A critical error occurred: %s" % str(e)), MessageBox.TYPE_ERROR)
+
 
 # ------------------------------------------------------------------------------------------
 # ------------------------------ Weather Maps ----------------------------------------------
@@ -2069,6 +2277,7 @@ class SatPanelListb(MenuList):
 				self.skinAttributes.remove((attrib, value))
 			except Exception:
 				pass
+
 		self.l.setFont(0, self.font0)
 		self.l.setFont(1, self.font1)
 		self.l.setItemHeight(self.itemHeight)
@@ -2083,37 +2292,53 @@ class SatPanelb(Screen, HelpableScreen):
 
 		if size_w == 1920:
 			self.skin = """
-				<screen name="SatPanelb" position="center,center" size="1200,820">
-					<widget enableWrapAround="1" name="Mlist" itemHeight="144" position="10,20" scrollbarMode="showOnDemand" size="1180,720" />
-					<eLabel backgroundColor="grey" position="10,760" size="1180,1" />
-					<ePixmap position="1030,780" size="60,30" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_ok.png" />
-					<ePixmap position="1120,780" size="60,30" pixmap="skin_default/icons/help.png" />
+				<screen name="SatPanelb" position="center,center" size="1200,900">
+					<eLabel backgroundColor="blue" position="895,65" size="295,6" zPosition="11" />
+					<widget backgroundColor="#18188b" font="Regular;30" halign="center" position="895,5" render="Label" shadowColor="black" shadowOffset="-2,-2" size="295,70" source="key_blue" transparent="1" valign="center" zPosition="1" />
+					<eLabel backgroundColor="#999999" position="10,80" size="1180,2" />
+					<widget name="Mlist" enableWrapAround="1" itemHeight="144" position="10,90" scrollbarMode="showOnDemand" size="1180,720" />
+					<eLabel backgroundColor="#999999" position="10,770" size="1180,2" />
+					<ePixmap position="42,864" size="60,30" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_ok.png" />
+					<ePixmap position="1135,864" size="60,30" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_next.png" />
+					<ePixmap position="1085,864" size="60,30" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_prev.png" />
 				</screen>
 			"""
 		elif size_w == 2560:
 			self.skin = """
-				<screen name="SatPanelb" position="center,center" size="1640,1040">
-					<widget name="Mlist" itemHeight="320" position="20,40" size="1600,960" enableWrapAround="1" scrollbarMode="showOnDemand" />
+				<screen name="SatPanelb" position="center,center" size="1600,1200">
+					<eLabel backgroundColor="blue" position="1194,87" size="394,8" zPosition="11"/>
+					<widget backgroundColor="#18188b" font="Regular;40" halign="center" position="1194,7" render="Label" shadowColor="black" shadowOffset="-2,-2" size="394,94" source="key_blue" transparent="1" valign="center" zPosition="1"/>
+					<eLabel backgroundColor="#999999" position="14,107" size="1574,3"/>
+					<widget name="Mlist" enableWrapAround="1" itemHeight="192" position="14,120" scrollbarMode="showOnDemand" size="1574,960"/>
+					<eLabel backgroundColor="#999999" position="14,1027" size="1574,3"/>
+					<ePixmap position="56,1152" size="80,40" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_ok.png"/>
+					<ePixmap position="1514,1152" size="80,40" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_next.png"/>
+					<ePixmap position="1447,1152" size="80,40" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_prev.png"/>
 				</screen>
 			"""
 		else:
 			self.skin = """
-				<screen name="SatPanelb" position="center,center" size="620,440" backgroundColor="#40000000">
-					<widget name="Mlist" position="10,10" size="600,370" zPosition="3" backgroundColor="#40000000" backgroundColorSelected="#565656" enableWrapAround="1" scrollbarMode="showOnDemand" />
+				<screen name="SatPanelb" position="center,center" size="800,600">
+					<eLabel backgroundColor="blue" position="596,43" size="196,4" zPosition="11"/>
+					<widget backgroundColor="#18188b" font="Regular;20" halign="center" position="596,3" render="Label" shadowColor="black" shadowOffset="-2,-2" size="196,46" source="key_blue" transparent="1" valign="center" zPosition="1"/>
+					<eLabel backgroundColor="#999999" position="6,53" size="786,1"/>
+					<widget name="Mlist" enableWrapAround="1" itemHeight="96" position="6,60" scrollbarMode="showOnDemand" size="786,480"/>
+					<eLabel backgroundColor="#999999" position="6,513" size="786,1"/>
+					<ePixmap position="28,576" size="40,20" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_ok.png"/>
+					<ePixmap position="756,576" size="40,20" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_next.png"/>
+					<ePixmap position="723,576" size="40,20" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_prev.png"/>
 				</screen>
 			"""
 
 		Screen.__init__(self, session)
 		self.setup_title = title
 		self.Mlist = mlist
-		FAlog("Mlist= %s" % self.Mlist, "\nSatPanelListb([])= %s" % SatPanelListb([]))
-		self.onChangedEntry = []
+		if DEBUG:
+			FAlog("Mlist= %s" % self.Mlist, "\nSatPanelListb([])= %s" % SatPanelListb([]))
 		self["Mlist"] = SatPanelListb([])
 		self["Mlist"].l.setList(self.Mlist)
 		self["Mlist"].selectionEnabled(1)
 		self["key_blue"] = StaticText(_("Settings"))
-		self.setTitle(title)
-
 		HelpableScreen.__init__(self)
 		self["actions"] = HelpableActionMap(
 			self, "ForecaActions",
@@ -2123,11 +2348,30 @@ class SatPanelb(Screen, HelpableScreen):
 				"right": (self.right, _("Right - Next page")),
 				"up": (self.up, _("Up - Previous")),
 				"down": (self.down, _("Down - Next")),
+				"showEventInfo": (self.info, _("Info - Legend")),
+				"info": (self.info, _("Info - Legend")),
 				"blue": (self.PicSetupMenu, _("Blue - Settings")),
 				"ok": (self.ok, _("OK - Show")),
 			},
 			-2,
 		)
+		self.setTitle(title)
+
+	def info(self):
+		message = str("%s" % (_(
+			"Server URL:    %s\n"
+		) % BASEURL))
+		entries = [
+			("VERSION", "%s" % VERSION),  # No translation needed
+			(_("Ok"), _("Show map")),
+			(_("Blue"), _("Settings")),
+			(_("Txt/Red"), _("Open Keyboard")),
+			(_("Up/Down"), _("Previous/Next")),
+			(_("<   >"), _("Previous/Next page")),
+			(_("Info"), _("This information"))
+		]
+		message += format_message(entries)
+		self.session.open(MessageBox, message, MessageBox.TYPE_INFO)
 
 	def up(self):
 		self["Mlist"].up()
@@ -2144,42 +2388,67 @@ class SatPanelb(Screen, HelpableScreen):
 		self["Mlist"].pageDown()
 
 	def Exit(self):
-		global menu
-		menu = "stop"
 		self.close()
 
 	def ok(self):
 		menu = self['Mlist'].l.getCurrentSelection()[0][1]
-		FAlog("SatPanelb menu= %s" % menu, "CurrentSelection= %s" % self['Mlist'].l.getCurrentSelection())
+		if DEBUG:
+			FAlog("SatPanelb menu= %s" % menu, "CurrentSelection= %s" % self['Mlist'].l.getCurrentSelection())
 		self.SatBild()
 
 	def PicSetupMenu(self):
-		self.session.open(PicSetup)
+		self.session.openWithCallback(self.OKCallback, PicSetup)
+
+	def OKCallback(self, callback=None):
+		global fav1, fav2, start
+		# self.ort = city
+		# fav1 = str(config.plugins.foreca.fav1.getValue())
+		# fav2 = str(config.plugins.foreca.fav2.getValue())
+		# start = str(config.plugins.foreca.home.getValue())
+		fav1 = config.plugins.foreca.fav1.getValue()[config.plugins.foreca.fav1.getValue().rfind("/") + 1:]
+		fav2 = config.plugins.foreca.fav2.getValue()[config.plugins.foreca.fav2.getValue().rfind("/") + 1:]
+		start = config.plugins.foreca.home.getValue()[config.plugins.foreca.home.getValue().rfind("/") + 1:]
+		self.ort = config.plugins.foreca.home.getValue()
+		self.Exit()
 
 	def SatBild(self):
 		try:
 			current_selection = self['Mlist'].l.getCurrentSelection()
 			if not current_selection or not current_selection[0] or len(current_selection[0]) < 2:
-				FAlog("SatBild Error: Invalid selection in CurrentSelection", str(current_selection))
+				if DEBUG:
+					FAlog("SatBild Error: Invalid selection in CurrentSelection", str(current_selection))
 				self.session.open(MessageBox, _("Invalid selection. Please select a valid region."), MessageBox.TYPE_ERROR)
 				return
 
 			region = current_selection[0][1]
-			FAlog("SatBild: Selected region = %s" % region)
+			print('region=', region, type(region))
+			if DEBUG:
+				FAlog("SatBild: Selected region = %s" % region)
 			devicepath = CACHE_PATH + "meteogram.png"
+			print('DEVICEPATH=', devicepath, type(devicepath))
+
+
 			url = "http://img.wetterkontor.de/karten/" + region + "0.jpg"
-			FAlog("SatBild: Downloading image from URL = %s" % url)
+			# print('url = ', url, type(url))
+			if DEBUG:
+				FAlog("SatBild: Downloading image from URL = %s" % url)
 
 			try:
 				download_image(url, devicepath)
+				if getsize(devicepath) == 0:
+					if DEBUG:
+						FAlog("SatBild Error: Downloaded file is empty")
+					self.session.open(MessageBox, _("Failed to Downloaded the satellite image: %s" % str(devicepath)), MessageBox.TYPE_ERROR)
 				remove_icc_profile(devicepath)
-				self.session.open(PicView, devicepath, 0, False)
+				self.session.open(PicViewx, devicepath, 0, False, None)
 			except Exception as e:
-				FAlog("SatBild Error: Failed to download or save the image", str(e))
+				if DEBUG:
+					FAlog("SatBild Error: Failed to download image: %s" % str(e))
 				self.session.open(MessageBox, _("Failed to load the satellite image: %s" % str(e)), MessageBox.TYPE_ERROR)
 
 		except Exception as e:
-			FAlog("SatBild Critical Error", str(e))
+			if DEBUG:
+				FAlog("SatBild Critical Error", str(e))
 			self.session.open(MessageBox, _("A critical error occurred: %s" % str(e)), MessageBox.TYPE_ERROR)
 
 
@@ -2188,44 +2457,46 @@ class SatPanelb(Screen, HelpableScreen):
 # ------------------------------------------------------------------------------------------
 
 
-class PicView(Screen):
+class PicViewx(Screen):
 
-	def __init__(self, session, filelist, index, startslide):
+	def __init__(self, session, filelist, index, startslide, plaats=None):
 		self.session = session
 		self.bgcolor = config.plugins.foreca.bgcolor.value
 		space = config.plugins.foreca.framesize.value
+		space = space + 5
 
-		self.skindir = "/tmp"
-		self.skin = "<screen position=\"0,0\" size=\"" + str(size_w) + "," + str(size_h) + "\" > \
-			<eLabel position=\"0,0\" zPosition=\"0\" size=\"" + str(size_w) + "," + str(size_h) + "\" backgroundColor=\"" + self.bgcolor + "\" /> \
-			<widget name=\"pic\" position=\"" + str(space) + "," + str(space) + "\" size=\"" + str(size_w - (space * 2)) + "," + str(size_h - (space * 2)) + "\" zPosition=\"1\" alphatest=\"on\" /> \
-			</screen>"
+		self.skin = "<screen name=\"PicView\" title=\"PicView\" position=\"0,0\" size=\"" + str(size_w) + "," + str(size_h) + "\" > \
+					<!-- <eLabel position=\"0,0\" zPosition=\"-1\" size=\"" + str(size_w) + "," + str(size_h) + "\" backgroundColor=\"" + self.bgcolor + "\" /> --> \
+					<widget name=\"pic\" position=\"" + str(space) + ", 50" + "\" size=\"" + str(size_w - (space * 2)) + "," + str(size_h - (space * 2)) + "\" zPosition=\"1\" alphatest=\"blend\" /> \
+					<widget name=\"city\" position=\"" + str(space) + ", 100" + "\" font=\"Regular;34\" size=\"" + str(size_w) + "," + str(size_h) + "\" backgroundColor=\"" + self.bgcolor + "\" foregroundColor=\"#ffffff\" zPosition=\"10\" transparent=\"1\" /> \
+					</screen>"
 
 		Screen.__init__(self, session)
-		self["actions"] = ActionMap(
-			["OkCancelActions", "MediaPlayerActions"],
+		self["actions"] = HelpableActionMap(
+			self, "ForecaActions",
 			{
-				"cancel": self.Exit,
-				"stop": self.Exit,
+				"cancel": (self.Exit, _("Exit - End")),
+				"stop": (self.Exit, _("Exit - End")),
 			},
 			-1
 		)
-
 		self["pic"] = Pixmap()
+		self["city"] = Label(plaats)
 		self.filelist = filelist
 		self.old_index = 0
 		self.lastindex = index
 		self.currPic = []
+		self.setTitle(plaats)
 		self.shownow = True
 		self.dirlistcount = 0
 		self.index = 0
 		self.picload = ePicLoad()
 		self.picload.PictureData.get().append(self.finish_decode)
 		self.onLayoutFinish.append(self.setPicloadConf)
+
 		self.startslide = startslide
 
 	def setPicloadConf(self):
-		FAlog("[setPicloadConf] setPicloadConf")
 		sc = getScale()
 		if not sc or len(sc) < 2:
 			sc = (1920, 1080)
@@ -2244,7 +2515,6 @@ class PicView(Screen):
 		self.start_decode()
 
 	def ShowPicture(self):
-		FAlog("[setPicloadConf] ShowPicture")
 		if self.shownow and len(self.currPic):
 			self.shownow = False
 			if self.currPic[0]:
@@ -2255,7 +2525,6 @@ class PicView(Screen):
 				print("[ShowPicture] No image data present.")
 
 	def finish_decode(self, picInfo=""):
-		FAlog("[setPicloadConf] finish_decode")
 		ptr = self.picload.getData()
 		if ptr is not None:
 			print("[finish_decode] Image data loaded successfully.")
@@ -2270,7 +2539,6 @@ class PicView(Screen):
 			print("[finish_decode] No image data obtained from picload.")
 
 	def start_decode(self):
-		FAlog("[setPicloadConf] start_decode")
 		self.picload.startDecode(self.filelist)
 
 	def clear_images(self):
@@ -2304,35 +2572,39 @@ class View_Slideshow(Screen):
 
 	def __init__(self, session, pindex=0, startslide=False):
 
-		print("SlideShow is running...")
+		if DEBUG:
+			FAlog("SlideShow is running...")
 		self.textcolor = config.plugins.foreca.textcolor.value
 		self.bgcolor = config.plugins.foreca.bgcolor.value
 		space = config.plugins.foreca.framesize.value
 		fontsize = config.plugins.foreca.fontsize.value
 
-		self.skindir = "/tmp"
 		self.skin = "<screen position=\"0,0\" size=\"" + str(size_w) + "," + str(size_h) + "\" flags=\"wfNoBorder\" > \
 			<eLabel position=\"0,0\" zPosition=\"0\" size=\"" + str(size_w) + "," + str(size_h) + "\" backgroundColor=\"" + self.bgcolor + "\" /> \
 			<widget name=\"pic\" position=\"" + str(space) + "," + str(space + 40) + "\" size=\"" + str(size_w - (space * 2)) + "," + str(size_h - (space * 2) - 40) + "\" zPosition=\"1\" alphatest=\"on\" /> \
 			<widget name=\"point\" position=\"" + str(space + 5) + "," + str(space + 10) + "\" size=\"20,20\" zPosition=\"2\" pixmap=\"" + THUMB_PATH + "record.png\" alphatest=\"on\" /> \
 			<widget name=\"play_icon\" position=\"" + str(space + 25) + "," + str(space + 10) + "\" size=\"20,20\" zPosition=\"2\" pixmap=\"" + THUMB_PATH + "ico_mp_play.png\"  alphatest=\"on\" /> \
-			<widget name=\"file\" position=\"" + str(space + 45) + "," + str(space + 10) + "\" size=\"" + str(size_w - (space * 2) - 50) + "," + str(fontsize + 5) + "\" font=\"Regular;" + str(fontsize) + "\" halign=\"left\" foregroundColor=\"" + self.textcolor + "\" zPosition=\"2\" noWrap=\"1\" transparent=\"1\" /> \
+			<widget name=\"file\" position=\"" + str(space + 45) + "," + str(space + 10) + "\" size=\"" + str(size_w - (space * 2) - 50) + "," + str(fontsize + 5) + "\" font=\"Regular;" + str(fontsize) + "\" halign=\"center\" foregroundColor=\"" + self.textcolor + "\" zPosition=\"2\" noWrap=\"1\" transparent=\"1\" /> \
 			</screen>"
 		Screen.__init__(self, session)
-
-		self["actions"] = ActionMap(
-			["OkCancelActions", "MediaPlayerActions"],
+		self["actions"] = HelpableActionMap(
+			self, "ForecaActions",
 			{
-				"cancel": self.Exit,
-				"stop": self.Exit,
-				"pause": self.PlayPause,
-				"play": self.PlayPause,
-				"previous": self.prevPic,
-				"next": self.nextPic,
+				"cancel": (self.Exit, _("Exit - End")),
+				"red": (self.Exit, _("Exit - End")),
+				"stop": (self.Exit, _("Exit - End")),
+				"ok": (self.PlayPause, _("Pause")),
+				"pause": (self.PlayPause, _("Pause")),
+				"playpause": (self.PlayPause, _("Play/Pause")),
+				"previous": (self.prevPic, _("Left - Previous")),
+				"next": (self.nextPic, _("Right - Next")),
+				"left": (self.prevPic, _("Left - Previous")),
+				"right": (self.nextPic, _("Right - Next")),
+				"showEventInfo": (self.info, _("Info - Legend")),
+				"info": (self.info, _("Info - Legend")),
 			},
-			-1
+			-1,
 		)
-
 		self["point"] = Pixmap()
 		self["pic"] = Pixmap()
 		self["play_icon"] = Pixmap()
@@ -2348,7 +2620,7 @@ class View_Slideshow(Screen):
 		for x in self.filelist.getFileList():
 			if x[0][0]:
 				if x[0][1] is False:
-					self.picfilelist.append(x[0][0] if PY3 else CACHE_PATH + x[0][0])
+					self.picfilelist.append(x[0][0])
 				else:
 					self.dirlistcount += 1
 
@@ -2356,17 +2628,36 @@ class View_Slideshow(Screen):
 		self.pindex = pindex - self.dirlistcount
 		if self.pindex < 0:
 			self.pindex = 0
+
 		self.picload = ePicLoad()
 		self.picload.PictureData.get().append(self.finish_decode)
 		self.slideTimer = eTimer()
 		self.slideTimer.callback.append(self.slidePic)
+
 		if self.maxentry >= 0:
 			self.onLayoutFinish.append(self.setPicloadConf)
 		if startslide is True:
 			self.PlayPause()
 
+	def info(self):
+		message = str("%s" % (_(
+			"Server URL:    %s\n"
+		) % BASEURL))
+		entries = [
+			("VERSION", "%s" % VERSION),
+			(_("Ok"), _("Pause")),
+			(_("Pause"), _("Pause Pic")),
+			(_("Play"), _("Play Pic")),
+			(_("Left/Right"), _("Prev./Next Pic")),
+			(_("Prev/Next"), _("Prev./Next Pic")),
+			(_("Stop"), _("Exit")),
+			(_("Red"), _("Exit")),
+			(_("Info"), _("This information"))
+		]
+		message += format_message(entries)
+		self.session.open(MessageBox, message, MessageBox.TYPE_INFO)
+
 	def setPicloadConf(self):
-		FAlog("[View_Slideshow] setPicloadConf")
 		sc = getScale()
 		if not sc or len(sc) < 2:
 			sc = (1920, 1080)
@@ -2389,7 +2680,6 @@ class View_Slideshow(Screen):
 		self.start_decode()
 
 	def ShowPicture(self):
-		FAlog("[View_Slideshow] ShowPicture")
 		if self.shownow and len(self.currPic):
 			self.shownow = False
 			self["file"].setText(self.currPic[0].replace(".jpg", "").replace(".png", ""))
@@ -2403,12 +2693,10 @@ class View_Slideshow(Screen):
 			self.start_decode()
 
 	def finish_decode(self, picInfo=""):
-		FAlog("[View_Slideshow] finish_decode")
 		self["point"].hide()
 		ptr = self.picload.getData()
 		if ptr is not None:
 			text = ""
-			print("[finish_decode] Image data loaded successfully.")
 			try:
 				if picInfo:
 					parts = picInfo.split('\n', 1)
@@ -2423,21 +2711,16 @@ class View_Slideshow(Screen):
 			print("[finish_decode] No image data obtained from picload.")
 
 	def start_decode(self):
-		FAlog("[View_Slideshow] start_decode")
 		if self.pindex < 0 or self.pindex >= len(self.picfilelist):
 			print("[start_decode] Index out of bounds: %d" % self.pindex)
 			return
 
 		filepath = self.picfilelist[self.pindex]
-
 		if CACHE_PATH not in filepath:
 			filepath = CACHE_PATH + filepath
-
-		print("[start_decode] filepath:", filepath)
 		if not exists(filepath):
-			print("[start_decode] File not found: %s" % filepath)
 			return
-		# print("[start_decode] decoding image: %s" % filepath)
+
 		try:
 			self.picload.startDecode(filepath)
 		except Exception as e:
@@ -2455,14 +2738,14 @@ class View_Slideshow(Screen):
 			self.pindex = self.maxentry
 
 	def slidePic(self):
-		FAlog("slide to next Picture index=" + str(self.lastindex))
+		if DEBUG:
+			FAlog("slide to next Picture index=" + str(self.lastindex))
 		if config.plugins.foreca.loop.value is False and self.lastindex == self.maxentry:
 			self.PlayPause()
 		self.shownow = True
 		self.ShowPicture()
 
 	def PlayPause(self):
-		FAlog("[View_Slideshow] PlayPause")
 		if self.slideTimer.isActive():
 			self.slideTimer.stop()
 			self["play_icon"].hide()
@@ -2489,7 +2772,6 @@ class View_Slideshow(Screen):
 				if exists(full_path):
 					try:
 						remove(full_path)
-						print("Image file removed:", full_path)
 					except OSError as e:
 						print("Error while removing file:", full_path, e)
 
@@ -2501,7 +2783,7 @@ class View_Slideshow(Screen):
 						file_path = join(CACHE_PATH, filename)
 						try:
 							remove(file_path)
-							print("Image file removed:", file_path)
+							# print("Image file removed:", file_path)
 						except OSError as e:
 							print("Error while removing file:", file_path, e)
 		except Exception as e:
@@ -2521,74 +2803,95 @@ class PicSetup(Screen, ConfigListScreen):
 
 	if size_w == 1920:
 		skin = """
-		<screen name="PicSetup" position="center,170" size="1200,820" title="Setup" >
-			<ePixmap pixmap="skin_default/buttons/red.png" position="10,5" scale="stretch" size="350,70" />
-			<ePixmap pixmap="skin_default/buttons/green.png" position="360,5" scale="stretch" size="350,70" />
-			<widget backgroundColor="#9f1313" font="Regular;30" halign="center" position="10,5" render="Label" shadowColor="black" shadowOffset="-2,-2" size="350,70" source="key_red" transparent="1" valign="center" zPosition="1" />
-			<widget backgroundColor="#1f771f" font="Regular;30" halign="center" position="360,5" render="Label" shadowColor="black" shadowOffset="-2,-2" size="350,70" source="key_green" transparent="1" valign="center" zPosition="1" />
-			<widget backgroundColor="background" font="Regular;34" halign="right" position="1050,25" render="Label" shadowColor="black" shadowOffset="-2,-2" size="120,40" source="global.CurrentTime" transparent="1">
+		<screen name="PicSetup" position="center,center" size="1200,900" title="Setup">
+			<eLabel backgroundColor="red" position="10,65" size="295,6" zPosition="11" />
+			<eLabel backgroundColor="green" position="305,65" size="295,6" zPosition="11" />
+			<widget backgroundColor="#9f1313" font="Regular;30" halign="center" position="10,5" render="Label" shadowColor="black" shadowOffset="-2,-2" size="295,70" source="key_red" transparent="1" valign="center" zPosition="1" />
+			<widget backgroundColor="#1f771f" font="Regular;30" halign="center" position="305,5" render="Label" shadowColor="black" shadowOffset="-2,-2" size="295,70" source="key_green" transparent="1" valign="center" zPosition="1" />
+			<eLabel backgroundColor="#999999" position="10,80" size="1180,2" />
+			<widget enableWrapAround="1" name="Mlist" position="10,90" scrollbarMode="showOnDemand" size="1180,720" />
+			<eLabel backgroundColor="#999999" position="10,770" size="1180,2" />
+			<ePixmap position="42,864" size="60,30" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_ok.png" />
+			<widget backgroundColor="background" font="Regular;34" halign="right" position="1012,41" render="Label" shadowColor="black" shadowOffset="-2,-2" size="120,40" source="global.CurrentTime" transparent="1">
 				<convert type="ClockToText">Default</convert>
 			</widget>
-			<widget backgroundColor="background" font="Regular;34" halign="right" position="640,25" render="Label" shadowColor="black" shadowOffset="-2,-2" size="400,40" source="global.CurrentTime" transparent="1">
+			<widget backgroundColor="background" font="Regular;34" halign="right" position="730,5" render="Label" shadowColor="black" shadowOffset="-2,-2" size="400,40" source="global.CurrentTime" transparent="1">
 				<convert type="ClockToText">Date</convert>
 			</widget>
-			<eLabel backgroundColor="grey" position="10,80" size="1180,1" />
-			<widget enableWrapAround="1" name="Mlist" position="10,90" scrollbarMode="showOnDemand" size="1180,720" />
 		</screen>"""
+
 	elif size_w == 2560:
 		skin = """
-		<screen name="PicSetup" position="center,240" size="1640,1060" title="Setup" >
-			<ePixmap pixmap="skin_default/buttons/red.png" position="20,10" size="400,80" />
-			<ePixmap pixmap="skin_default/buttons/green.png" position="420,10" size="400,80" />
-			<widget render="Label" source="key_red" position="20,10" size="400,80" zPosition="5" valign="center" halign="center" backgroundColor="#9f1313" font="Regular;42" transparent="1" foregroundColor="white" shadowColor="black" shadowOffset="-1,-1" />
-			<widget render="Label" source="key_green" position="420,10" size="400,80" zPosition="5" valign="center" halign="center" backgroundColor="#1f771f" font="Regular;42" transparent="1" foregroundColor="white" shadowColor="black" shadowOffset="-1,-1" />
-			<eLabel position="20,100" size="1600,2" backgroundColor="grey" />
-			<widget name="Mlist" position="20,120" size="1600,920" enableWrapAround="1" scrollbarMode="showOnDemand" />
+		<screen name="PicSetup" position="center,center" size="1600,1200" title="Setup">
+			<eLabel backgroundColor="red" position="14,87" size="394,8" zPosition="11"/>
+			<eLabel backgroundColor="green" position="407,87" size="394,8" zPosition="11"/>
+			<widget backgroundColor="#9f1313" font="Regular;40" halign="center" position="14,7" render="Label" shadowColor="black" shadowOffset="-2,-2" size="394,94" source="key_red" transparent="1" valign="center" zPosition="1"/>
+			<widget backgroundColor="#1f771f" font="Regular;40" halign="center" position="407,7" render="Label" shadowColor="black" shadowOffset="-2,-2" size="394,94" source="key_green" transparent="1" valign="center" zPosition="1"/>
+			<eLabel backgroundColor="#999999" position="14,107" size="1574,3"/>
+			<widget enableWrapAround="1" name="Mlist" position="14,120" scrollbarMode="showOnDemand" size="1574,960"/>
+			<eLabel backgroundColor="#999999" position="14,1027" size="1574,3"/>
+			<ePixmap position="56,1152" size="80,40" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_ok.png"/>
+			<widget backgroundColor="background" font="Regular;46" halign="right" position="1350,55" render="Label" shadowColor="black" shadowOffset="-2,-2" size="160,54" source="global.CurrentTime" transparent="1">
+				<convert type="ClockToText">Default</convert>
+			</widget>
+			<widget backgroundColor="background" font="Regular;46" halign="right" position="974,7" render="Label" shadowColor="black" shadowOffset="-2,-2" size="534,54" source="global.CurrentTime" transparent="1">
+				<convert type="ClockToText">Date</convert>
+			</widget>
 		</screen>"""
 	else:
 		skin = """
-		<screen name="PicSetup" position="center,120" size="820,520" title="Setup" >
-			<ePixmap pixmap="skin_default/buttons/red.png" position="10,5" size="200,40" />
-			<ePixmap pixmap="skin_default/buttons/green.png" position="210,5" size="200,40" />
-			<widget render="Label" source="key_red" position="10,5" size="200,40" zPosition="5" valign="center" halign="center" backgroundColor="#9f1313" font="Regular;21" transparent="1" foregroundColor="white" shadowColor="black" shadowOffset="-1,-1" />
-			<widget render="Label" source="key_green" position="210,5" size="200,40" zPosition="5" valign="center" halign="center" backgroundColor="#1f771f" font="Regular;21" transparent="1" foregroundColor="white" shadowColor="black" shadowOffset="-1,-1" />
-			<eLabel position="10,50" size="800,1" backgroundColor="grey" />
-			<widget name="Mlist" position="10,60" size="800,450" enableWrapAround="1" scrollbarMode="showOnDemand" />
+		<screen name="PicSetup" position="center,center" size="800,600" title="Setup">
+			<eLabel backgroundColor="red" position="6,43" size="196,4" zPosition="11"/>
+			<eLabel backgroundColor="green" position="203,43" size="196,4" zPosition="11"/>
+			<widget backgroundColor="#9f1313" font="Regular;20" halign="center" position="6,3" render="Label" shadowColor="black" shadowOffset="-2,-2" size="196,46" source="key_red" transparent="1" valign="center" zPosition="1"/>
+			<widget backgroundColor="#1f771f" font="Regular;20" halign="center" position="203,3" render="Label" shadowColor="black" shadowOffset="-2,-2" size="196,46" source="key_green" transparent="1" valign="center" zPosition="1"/>
+			<eLabel backgroundColor="#999999" position="6,53" size="786,1"/>
+			<widget enableWrapAround="1" name="Mlist" position="6,60" scrollbarMode="showOnDemand" size="786,480"/>
+			<eLabel backgroundColor="#999999" position="6,513" size="786,1"/>
+			<ePixmap position="28,576" size="40,20" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_ok.png"/>
+			<widget backgroundColor="background" font="Regular;22" halign="right" position="674,27" render="Label" shadowColor="black" shadowOffset="-2,-2" size="80,26" source="global.CurrentTime" transparent="1">
+				<convert type="ClockToText">Default</convert>
+			</widget>
+			<widget backgroundColor="background" font="Regular;22" halign="right" position="486,3" render="Label" shadowColor="black" shadowOffset="-2,-2" size="266,26" source="global.CurrentTime" transparent="1">
+				<convert type="ClockToText">Date</convert>
+			</widget>
 		</screen>"""
-	FAlog("Setup...")
+	if DEBUG:
+		FAlog("Setup...")
 
 	def __init__(self, session):
 		self.skin = PicSetup.skin
 		Screen.__init__(self, session)
-		self.setup_title = _("SlideShow Settings")
-		self.list = []
-		self.onChangedEntry = []
+		self.setup_title = _("Settings")
 		self["key_red"] = StaticText(_("Cancel"))
 		self["key_green"] = StaticText(_("Save"))
-		self.setTitle(_("SlideShow Settings"))
-		self["actions"] = NumberActionMap(
-			["SetupActions", "ColorActions"],
+		self["actions"] = HelpableActionMap(
+			self, "ForecaActions",
 			{
-				"ok": self.save,
-				"save": self.save,
-				"green": self.save,
-				"cancel": self.cancel,
-				"red": self.cancel,
-				"left": self.keyLeft,
-				"right": self.keyRight,
-				"0": self.keyNumber,
-				"1": self.keyNumber,
-				"2": self.keyNumber,
-				"3": self.keyNumber,
-				"4": self.keyNumber,
-				"5": self.keyNumber,
-				"6": self.keyNumber,
-				"7": self.keyNumber,
-				"8": self.keyNumber,
-				"9": self.keyNumber,
+				"ok": (self.OKcity, _("OK - City")),
+				"green": (self.save, _("Green - Save")),
+				"cancel": (self.cancel, _("Exit - End")),
+				"red": (self.cancel, _("Exit - End")),
+				"left": (self.keyLeft, _("Left")),
+				"right": (self.keyRight, _("Right")),
+				"up": (self.keyUp, _("Up")),
+				"down": (self.keyDown, _("Down ")),
+				"0": (boundFunction(self.keyNumberGlobal, 0), _("0")),
+				"1": (boundFunction(self.keyNumberGlobal, 1), _("1")),
+				"2": (boundFunction(self.keyNumberGlobal, 2), _("2")),
+				"3": (boundFunction(self.keyNumberGlobal, 3), _("3")),
+				"4": (boundFunction(self.keyNumberGlobal, 4), _("4")),
+				"5": (boundFunction(self.keyNumberGlobal, 5), _("5")),
+				"6": (boundFunction(self.keyNumberGlobal, 6), _("6")),
+				"7": (boundFunction(self.keyNumberGlobal, 7), _("7")),
+				"8": (boundFunction(self.keyNumberGlobal, 8), _("8")),
+				"9": (boundFunction(self.keyNumberGlobal, 9), _("9")),
 			},
-			-3,
+			-3
 		)
+
+		self.list = []
+		self.onChangedEntry = []
 		self["Mlist"] = ConfigList(self.list)
 		ConfigListScreen.__init__(self, self.list, session=self.session, on_change=self.changedEntry)
 		self.createSetup()
@@ -2600,11 +2903,13 @@ class PicSetup(Screen, ConfigListScreen):
 	def createSetup(self):
 		self.editListEntry = None
 		self.list = []
-
-		self.list.append(getConfigListEntry(_("Type Server"), config.plugins.foreca.languages))
+		# self.list.append(getConfigListEntry(_("Type Server"), config.plugins.foreca.languages))
 		self.list.append(getConfigListEntry(_("Select units"), config.plugins.foreca.units))
 		self.list.append(getConfigListEntry(_("Select time format"), config.plugins.foreca.time))
 		self.list.append(getConfigListEntry(_("City names as labels in the Main screen"), config.plugins.foreca.citylabels))
+		self.list.append(getConfigListEntry(_("Home City at start"), config.plugins.foreca.home))
+		self.list.append(getConfigListEntry(_("Fav1 City"), config.plugins.foreca.fav1))
+		self.list.append(getConfigListEntry(_("Fav2 City"), config.plugins.foreca.fav2))
 		self.list.append(getConfigListEntry(_("Frame size in full view"), config.plugins.foreca.framesize))
 		self.list.append(getConfigListEntry(_("Font size in slideshow"), config.plugins.foreca.fontsize))
 		self.list.append(getConfigListEntry(_("Scaling Mode"), config.plugins.foreca.resize))
@@ -2618,6 +2923,76 @@ class PicSetup(Screen, ConfigListScreen):
 		self["Mlist"].list = self.list
 		self["Mlist"].l.setList(self.list)
 
+	def OKcity(self):
+		current_item = str(self["Mlist"].getCurrent()[1].getText())
+		self.config_entry = None
+
+		"""
+		print("current_item:", type(current_item), current_item)
+		print("config.plugins.foreca.home:", type(config.plugins.foreca.home), config.plugins.foreca.home.value)
+		print("config.plugins.foreca.fav1:", type(config.plugins.foreca.fav1), config.plugins.foreca.fav1.value)
+		print("config.plugins.foreca.fav2:", type(config.plugins.foreca.fav2), config.plugins.foreca.fav2.value)
+		"""
+
+		if current_item == config.plugins.foreca.home.value:
+			self.config_entry = config.plugins.foreca.home
+		elif current_item == config.plugins.foreca.fav1.value:
+			self.config_entry = config.plugins.foreca.fav1
+		elif current_item == config.plugins.foreca.fav2.value:
+			self.config_entry = config.plugins.foreca.fav2
+
+		if self.config_entry is None:
+			print("ERROR: self.config_entry is None in OKcity!")
+			return
+
+		self.session.openWithCallback(self.OKCallback, CityPanel, self.config_entry)
+
+	def OKCallback(self, city=None):
+		print("Received city:", city)
+
+		if city is None:
+			print("No city selected, exiting callback.")
+			return
+
+		if not isinstance(city, str):
+			print("ERROR: city is not a string! Current type:", type(city))
+			return
+
+		city_parts = city.split("/")
+		if len(city_parts) == 2:
+			country, city_name = city_parts
+			print("Country:", country)
+			print("City:", city_name)
+		else:
+			print("ERROR: city format is incorrect")
+			return
+
+		if not isinstance(self.config_entry, ConfigText):
+			print("WARNING: self.config_entry was lost or corrupted. Restoring it.")
+			self.config_entry = config.plugins.foreca.home
+
+		if self.config_entry is None:
+			print("ERROR: self.config_entry is still None after restoring!")
+			return
+		"""
+		print("Config entry actual:", self.config_entry, type(self.config_entry))
+		print("Available methods:", dir(self.config_entry))
+		print("Checking if setValue exists:", hasattr(self.config_entry, "setValue"))
+		"""
+
+		if not callable(getattr(self.config_entry, "setValue", None)):
+			print("ERROR: setValue is not callable! It is:", type(self.config_entry.setValue))
+			return
+
+		try:
+			self.config_entry.setValue(city)
+			self.config_entry.save()
+		except Exception as e:
+			print("Unexpected error:", e)
+		configfile.save()
+		self.city = city
+		self.createSetup()
+
 	def changedEntry(self):
 		current_item = self["Mlist"].getCurrent()
 		if current_item is not None:
@@ -2625,10 +3000,10 @@ class PicSetup(Screen, ConfigListScreen):
 			for callback in self.onChangedEntry:
 				callback()
 			config_item = current_item[1]
-			if isinstance(config_item, (ConfigYesNo, ConfigSelection, ConfigEnableDisable)):
+			if isinstance(config_item, (ConfigYesNo, ConfigText, ConfigSelection, ConfigEnableDisable)):
 				self.createSetup()
 		else:
-			print("Errore: Nessun elemento selezionato in Mlist!")
+			print("Errore: No element select in Mlist!")
 
 	def getCurrentEntry(self):
 		return self["Mlist"].getCurrent() and self["Mlist"].getCurrent()[0] or ""
@@ -2641,13 +3016,13 @@ class PicSetup(Screen, ConfigListScreen):
 			for x in self["Mlist"].list:
 				x[1].save()
 			config.save()
-			self.refreshPlugins()
+		self.refreshPlugins()
 		self.close()
 
 	def cancel(self):
 		for x in self["Mlist"].list:
 			x[1].cancel()
-		self.close(False, self.session)
+		self.close()
 
 	def keyLeft(self):
 		self["Mlist"].handleKey(KEY_LEFT)
@@ -2655,6 +3030,14 @@ class PicSetup(Screen, ConfigListScreen):
 
 	def keyRight(self):
 		self["Mlist"].handleKey(KEY_RIGHT)
+		self.createSetup()
+
+	def keyDown(self):
+		self['Mlist'].instance.moveSelection(self['Mlist'].instance.moveDown)
+		self.createSetup()
+
+	def keyUp(self):
+		self['Mlist'].instance.moveSelection(self['Mlist'].instance.moveUp)
 		self.createSetup()
 
 	def keyNumber(self, number):
