@@ -237,6 +237,10 @@ VERSION = "3.3.8"
 #  RECODE FROM LULULLA
 # 3.3.7 removed .cfg files - add TV button for Menu Config
 #  RECODE FROM LULULLA
+# 3.3.8 Mahor fix on clean all code unnecessay / append new PY3
+#  Translate 90% complete
+#
+#  RECODE FROM LULULLA
 
 
 class WebClientContextFactory(ClientContextFactory):
@@ -448,6 +452,8 @@ def download_image(url, devicepath):
 
 def remove_icc_profile(devicepath):
 	try:
+		from PIL import Image
+		import warnings
 		warnings.filterwarnings("ignore", "(?s).*iCCP.*", category=UserWarning)
 		img = Image.open(devicepath)
 		img.save(devicepath, icc_profile=None)
@@ -823,10 +829,6 @@ class ForecaPreview(Screen, HelpableScreen):
 			config.plugins.foreca.units.value,
 			config.plugins.foreca.time.value
 		)
-		"""
-		# if isinstance(MAIN_PAGE, unicode):
-			# MAIN_PAGE = MAIN_PAGE.encode('utf-8')
-		"""
 		if DEBUG:
 			FAlog("initial link:", MAIN_PAGE)
 
@@ -1234,7 +1236,7 @@ class ForecaPreview(Screen, HelpableScreen):
 			img.save(devicepath, icc_profile=None)
 		except Exception as e:
 			print("Errore nella rimozione del profilo ICC:", e)
-		self.session.open(PicViewx, devicepath, 0, False, self.plaats)
+		self.session.open(PicView, devicepath, 0, False, self.plaats)
 
 	def getForecaPage(self, html):
 		"""
@@ -2008,8 +2010,8 @@ class SatPanel(Screen, HelpableScreen):
 		if DEBUG:
 			FAlog("SatPanel menu= %s" % menu, "CurrentSelection= %s" % self['Mlist'].l.getCurrentSelection())
 
-		self.cacheDialog = self.session.instantiateDialog(ForecaPreviewCache)
-		self.cacheDialog.start()
+		# self.cacheDialog = self.session.instantiateDialog(ForecaPreviewCache)
+		# self.cacheDialog.start()
 		self.SatBild()
 
 	def MapsGermany(self):
@@ -2157,13 +2159,14 @@ class SatPanel(Screen, HelpableScreen):
 		except requests.RequestException as e:
 			print("Error while page download: %s" % str(e))
 			return
+
 		pattern = r'<li class=".*?">\s*<a .*?href="([^"]+)".*?>\s*(.*?)\s*</a>'
 		matches = findall(pattern, html)
 		seen_links = set()
 		menu = []
 
 		for href, title in matches:
-			if 'satellite' in title.lower():
+			if "satellite" in title.lower():
 				link = base_url + href
 				if link not in seen_links:
 					menu.append((title.strip(), link))
@@ -2187,13 +2190,14 @@ class SatPanel(Screen, HelpableScreen):
 						if not chosen_link.startswith("http"):
 							chosen_link = base_url + chosen_link
 						try:
+							from PIL import Image
 							img_response = requests.get(chosen_link, headers=HEADERS, timeout=10)
 							img = Image.open(BytesIO(img_response.content))
 							img = img.convert("RGB")  # Rimuove ICC
 							img.save(devicepath, "PNG")
 							if DEBUG:
 								FAlog("Image dimensions: {}x{}".format(img.width, img.height))
-							self.session.openWithCallback(returnToChoiceBox, PicViewx, devicepath, 0, False, None)
+							self.session.openWithCallback(returnToChoiceBox, PicView, devicepath, 0, False, None)
 						except requests.RequestException as e:
 							if DEBUG:
 								FAlog("Error downloading image: %s" % str(e))
@@ -2352,6 +2356,7 @@ class SatPanelb(Screen, HelpableScreen):
 		self.Mlist = mlist
 		if DEBUG:
 			FAlog("Mlist= %s" % self.Mlist, "\nSatPanelListb([])= %s" % SatPanelListb([]))
+		self.onChangedEntry = []
 		self["Mlist"] = SatPanelListb([])
 		self["Mlist"].l.setList(self.Mlist)
 		self["Mlist"].selectionEnabled(1)
@@ -2448,10 +2453,10 @@ class SatPanelb(Screen, HelpableScreen):
 			try:
 				download_image(url, devicepath)
 				remove_icc_profile(devicepath)
-				self.session.open(PicViewx, devicepath, 0, False, None)
+				self.session.open(PicView, devicepath, 0, False, None)
 			except Exception as e:
 				if DEBUG:
-					FAlog("SatBild Error: Failed to download or save the image", str(e))
+					FAlog("SatBild Error: Failed to download image: %s" % str(e))
 				self.session.open(MessageBox, _("Failed to load the satellite image: %s" % str(e)), MessageBox.TYPE_ERROR)
 
 		except Exception as e:
@@ -2465,7 +2470,7 @@ class SatPanelb(Screen, HelpableScreen):
 # ------------------------------------------------------------------------------------------
 
 
-class PicViewx(Screen):
+class PicView(Screen):
 
 	def __init__(self, session, filelist, index, startslide, plaats=None):
 		self.session = session
@@ -2601,7 +2606,7 @@ class View_Slideshow(Screen):
 				"cancel": (self.Exit, _("Exit - End")),
 				"red": (self.Exit, _("Exit - End")),
 				"stop": (self.Exit, _("Exit - End")),
-                "ok": (self.PlayPause, _("Pause")),
+				"ok": (self.PlayPause, _("Pause")),
 				"pause": (self.PlayPause, _("Pause")),
 				"playpause": (self.PlayPause, _("Play/Pause")),
 				"previous": (self.prevPic, _("Left - Previous")),
