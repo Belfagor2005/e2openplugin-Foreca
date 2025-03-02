@@ -803,6 +803,7 @@ class ForecaPreview(Screen, HelpableScreen):
 		self.session = session
 		now = datetime.now()
 		heute = now.strftime("%Y%m%d")
+
 		if DEBUG:
 			FAlog("determined local date:", str(heute))
 
@@ -2010,8 +2011,8 @@ class SatPanel(Screen, HelpableScreen):
 		if DEBUG:
 			FAlog("SatPanel menu= %s" % menu, "CurrentSelection= %s" % self['Mlist'].l.getCurrentSelection())
 
-		# self.cacheDialog = self.session.instantiateDialog(ForecaPreviewCache)
-		# self.cacheDialog.start()
+		self.cacheDialog = self.session.instantiateDialog(ForecaPreviewCache)
+		self.cacheDialog.start()
 		self.SatBild()
 
 	def MapsGermany(self):
