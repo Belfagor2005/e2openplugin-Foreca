@@ -274,7 +274,7 @@ config.plugins.foreca.loop = ConfigYesNo(default=False)
 config.plugins.foreca.citylabels = ConfigEnableDisable(default=True)
 config.plugins.foreca.units = ConfigSelection(default="metrickmh", choices=[("metric", _("Metric (C, m/s)")), ("metrickmh", _("Metric (C, km/h)")), ("imperial", _("Imperial (C, mph)")), ("us", _("US (F, mph)"))])
 config.plugins.foreca.time = ConfigSelection(default="24h", choices=[("12h", _("12 h")), ("24h", _("24 h"))])
-config.plugins.foreca.debug = ConfigEnableDisable(default=True)
+config.plugins.foreca.debug = ConfigEnableDisable(default=False)
 
 HEADERS = {'User-Agent': 'Mozilla/5.0 (X11; U; Linux x86_64; en-US; rv:1.9.2.6) Gecko/20100627 Firefox/3.6.6'}
 
@@ -1216,7 +1216,7 @@ class ForecaPreview(Screen, HelpableScreen):
 			img.save(devicepath, icc_profile=None)
 		except Exception as e:
 			print("Errore nella rimozione del profilo ICC:", e)
-		self.session.open(PicViewx, devicepath, 0, False, self.plaats)
+		self.session.open(PicView, devicepath, 0, False, self.plaats)
 
 	def getForecaPage(self, html):
 		"""
@@ -1990,8 +1990,8 @@ class SatPanel(Screen, HelpableScreen):
 		if DEBUG:
 			FAlog("SatPanel menu= %s" % menu, "CurrentSelection= %s" % self['Mlist'].l.getCurrentSelection())
 
-		self.cacheDialog = self.session.instantiateDialog(ForecaPreviewCache)
-		self.cacheDialog.start()
+		# self.cacheDialog = self.session.instantiateDialog(ForecaPreviewCache)
+		# self.cacheDialog.start()
 		self.SatBild()
 
 	def MapsGermany(self):
@@ -2135,7 +2135,7 @@ class SatPanel(Screen, HelpableScreen):
 		try:
 			response = requests.get(base_url + "/en-gb/continent/eu", headers=HEADERS, timeout=10)
 			response.raise_for_status()
-			html = response.text  # In PY3 è già una stringa decodificata
+			html = response.text
 		except requests.RequestException as e:
 			print("Error while page download: %s" % str(e))
 			return
@@ -2162,7 +2162,7 @@ class SatPanel(Screen, HelpableScreen):
 				try:
 					req = Request(url, headers=HEADERS)
 					resp = urlopen(req, timeout=10)
-					content = resp.read().decode("utf-8")  # Solo per PY3
+					content = resp.read().decode("utf-8")
 					pattern = r'<div class="absolute w-full h-full overflow-hidden z-10">.*?<img .*?alt="satLayer".*?src="([^"]+)".*?>'
 					matches = findall(pattern, content, DOTALL)
 					if matches:
@@ -2176,7 +2176,7 @@ class SatPanel(Screen, HelpableScreen):
 							img.save(devicepath, "PNG")
 							if DEBUG:
 								FAlog("Image dimensions: {}x{}".format(img.width, img.height))
-							self.session.openWithCallback(returnToChoiceBox, PicViewx, devicepath, 0, False, None)
+							self.session.openWithCallback(returnToChoiceBox, PicView, devicepath, 0, False, None)
 						except requests.RequestException as e:
 							if DEBUG:
 								FAlog("Error downloading image: %s" % str(e))
@@ -2421,11 +2421,11 @@ class SatPanelb(Screen, HelpableScreen):
 				return
 
 			region = current_selection[0][1]
-			print('region=', region, type(region))
+			# print('region=', region, type(region))
 			if DEBUG:
 				FAlog("SatBild: Selected region = %s" % region)
 			devicepath = CACHE_PATH + "meteogram.png"
-			print('DEVICEPATH=', devicepath, type(devicepath))
+			# print('DEVICEPATH=', devicepath, type(devicepath))
 
 
 			url = "http://img.wetterkontor.de/karten/" + region + "0.jpg"
@@ -2440,7 +2440,7 @@ class SatPanelb(Screen, HelpableScreen):
 						FAlog("SatBild Error: Downloaded file is empty")
 					self.session.open(MessageBox, _("Failed to Downloaded the satellite image: %s" % str(devicepath)), MessageBox.TYPE_ERROR)
 				remove_icc_profile(devicepath)
-				self.session.open(PicViewx, devicepath, 0, False, None)
+				self.session.open(PicView, devicepath, 0, False, None)
 			except Exception as e:
 				if DEBUG:
 					FAlog("SatBild Error: Failed to download image: %s" % str(e))
@@ -2457,7 +2457,7 @@ class SatPanelb(Screen, HelpableScreen):
 # ------------------------------------------------------------------------------------------
 
 
-class PicViewx(Screen):
+class PicView(Screen):
 
 	def __init__(self, session, filelist, index, startslide, plaats=None):
 		self.session = session
@@ -2468,7 +2468,7 @@ class PicViewx(Screen):
 		self.skin = "<screen name=\"PicView\" title=\"PicView\" position=\"0,0\" size=\"" + str(size_w) + "," + str(size_h) + "\" > \
 					<!-- <eLabel position=\"0,0\" zPosition=\"-1\" size=\"" + str(size_w) + "," + str(size_h) + "\" backgroundColor=\"" + self.bgcolor + "\" /> --> \
 					<widget name=\"pic\" position=\"" + str(space) + ", 50" + "\" size=\"" + str(size_w - (space * 2)) + "," + str(size_h - (space * 2)) + "\" zPosition=\"1\" alphatest=\"blend\" /> \
-					<widget name=\"city\" position=\"" + str(space) + ", 100" + "\" font=\"Regular;34\" size=\"" + str(size_w) + "," + str(size_h) + "\" backgroundColor=\"" + self.bgcolor + "\" foregroundColor=\"#ffffff\" zPosition=\"10\" transparent=\"1\" /> \
+					<widget name=\"city\" position=\"" + str(space) + ", 20" + "\" font=\"Regular;34\" size=\"" + str(size_w) + "," + str(size_h) + "\" backgroundColor=\"" + self.bgcolor + "\" foregroundColor=\"#ffffff\" zPosition=\"10\" transparent=\"1\" /> \
 					</screen>"
 
 		Screen.__init__(self, session)
