@@ -2481,7 +2481,7 @@ class PicView(Screen):
 		self.skin = "<screen name=\"PicView\" title=\"PicView\" position=\"0,0\" size=\"" + str(size_w) + "," + str(size_h) + "\" > \
 					<!-- <eLabel position=\"0,0\" zPosition=\"-1\" size=\"" + str(size_w) + "," + str(size_h) + "\" backgroundColor=\"" + self.bgcolor + "\" /> --> \
 					<widget name=\"pic\" position=\"" + str(space) + ", 50" + "\" size=\"" + str(size_w - (space * 2)) + "," + str(size_h - (space * 2)) + "\" zPosition=\"1\" alphatest=\"blend\" /> \
-					<widget name=\"city\" position=\"" + str(space) + ", 100" + "\" font=\"Regular;34\" size=\"" + str(size_w) + "," + str(size_h) + "\" backgroundColor=\"" + self.bgcolor + "\" foregroundColor=\"#ffffff\" zPosition=\"10\" transparent=\"1\" /> \
+					<widget name=\"city\" position=\"" + str(space) + ", 20" + "\" font=\"Regular;34\" size=\"" + str(size_w) + "," + str(size_h) + "\" backgroundColor=\"" + self.bgcolor + "\" foregroundColor=\"#ffffff\" zPosition=\"10\" transparent=\"1\" /> \
 					</screen>"
 
 		Screen.__init__(self, session)
