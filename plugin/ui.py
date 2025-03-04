@@ -49,7 +49,7 @@ from Tools.Directories import resolveFilename, SCOPE_CONFIG, SCOPE_PLUGINS
 from Tools.LoadPixmap import LoadPixmap
 from locale import setlocale, LC_COLLATE, strxfrm
 from os import makedirs, unlink, remove, listdir
-from os.path import exists, join
+from os.path import exists, join, getsize
 from re import sub, DOTALL, compile, findall
 from skin import parseFont, parseColor
 from sys import version_info
@@ -319,6 +319,11 @@ def get_base_url_from_txt(file_url, fallback_url="https://www.foreca.nz/"):
 		response = requests.get(file_url, timeout=10)
 		response.raise_for_status()
 		new_base_url = response.text.strip()
+		# Validate the URL format
+		parsed_url = urlparse(new_base_url)
+		if not parsed_url.scheme or not parsed_url.netloc:
+			raise ValueError("Invalid URL format in the file")
+		# Test if the new base URL is accessible
 		test_response = requests.get(new_base_url, timeout=10)
 		test_response.raise_for_status()
 		print("New URL base found and working:", new_base_url)
@@ -2453,6 +2458,11 @@ class SatPanelb(Screen, HelpableScreen):
 
 			try:
 				download_image(url, devicepath)
+				if getsize(devicepath) == 0:
+					if DEBUG:
+						FAlog("SatBild Error: Downloaded file is empty")
+					self.session.open(MessageBox, _("Failed to Downloaded the satellite image: %s" % str(devicepath)), MessageBox.TYPE_ERROR)
+					return
 				remove_icc_profile(devicepath)
 				self.session.open(PicView, devicepath, 0, False, None)
 			except Exception as e:
@@ -2478,7 +2488,6 @@ class PicView(Screen):
 		self.bgcolor = config.plugins.foreca.bgcolor.value
 		space = config.plugins.foreca.framesize.value
 		space = space + 5
-
 		self.skin = "<screen name=\"PicView\" title=\"PicView\" position=\"0,0\" size=\"" + str(size_w) + "," + str(size_h) + "\" > \
 					<!-- <eLabel position=\"0,0\" zPosition=\"-1\" size=\"" + str(size_w) + "," + str(size_h) + "\" backgroundColor=\"" + self.bgcolor + "\" /> --> \
 					<widget name=\"pic\" position=\"" + str(space) + ", 50" + "\" size=\"" + str(size_w - (space * 2)) + "," + str(size_h - (space * 2)) + "\" zPosition=\"1\" alphatest=\"blend\" /> \
