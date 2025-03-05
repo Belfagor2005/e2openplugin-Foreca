@@ -1245,10 +1245,6 @@ class ForecaPreview(Screen, HelpableScreen):
 		self.session.open(PicView, devicepath, 0, False, self.plaats)
 
 	def getForecaPage(self, html):
-		"""
-		with open("/tmp/foreca_response.html", "w", encoding="utf-8") as f:
-			f.write(html)
-		"""
 		fulltext = compile(r"id: '(.*?)'", DOTALL)
 		id = fulltext.findall(html)
 		if DEBUG:
@@ -2029,8 +2025,8 @@ class SatPanel(Screen, HelpableScreen):
 			(_("Bremen"), 'bremen'),
 			(_("Hamburg"), 'hamburg'),
 			(_("Hesse"), 'hessen'),
-			(_("Lower Saxony"), 'niedersachsen'),
 			(_("Mecklenburg-Vorpommern"), 'mecklenburgvorpommern'),
+			(_("Lower Saxony"), 'niedersachsen'),
 			(_("North Rhine-Westphalia"), 'nordrheinwestfalen'),
 			(_("Rhineland-Palatine"), 'rheinlandpfalz'),
 			(_("Saarland"), 'saarland'),
@@ -2051,6 +2047,7 @@ class SatPanel(Screen, HelpableScreen):
 			(_("Belgium"), 'belgien'),
 			(_("Czech Republic"), 'tschechien'),
 			(_("Denmark"), 'daenemark'),
+			(_("Finland"), 'finnland'),
 			(_("France"), 'frankreich'),
 			(_("Germany"), 'deutschland'),
 			(_("Greece"), 'griechenland'),
@@ -2061,11 +2058,13 @@ class SatPanel(Screen, HelpableScreen):
 			(_("Latvia"), 'lettland'),
 			(_("Luxembourg"), 'luxemburg'),
 			(_("Netherlands"), 'niederlande'),
+			(_("Norway"), 'norwegen'),
 			(_("Poland"), 'polen'),
 			(_("Portugal"), 'portugal'),
 			(_("Russia"), 'russland'),
 			(_("Slovakia"), 'slowakei'),
 			(_("Spain"), 'spanien'),
+			(_("Sweden"), 'schweden'),
 			(_("Switzerland"), 'schweiz'),
 		]
 		itemList.sort(key=lambda i: strxfrm(i[0]))
@@ -2077,15 +2076,15 @@ class SatPanel(Screen, HelpableScreen):
 	def MapsContinents(self):
 		self.Mlist = []
 		self.Mlist.append(self.SatEntryItem((_("Europe"), 'europa')))
-		self.Mlist.append(self.SatEntryItem((_("Middle East"), 'naherosten')))
 		self.Mlist.append(self.SatEntryItem((_("North Africa"), 'afrika_nord')))
 		self.Mlist.append(self.SatEntryItem((_("South Africa"), 'afrika_sued')))
 		self.Mlist.append(self.SatEntryItem((_("North America"), 'nordamerika')))
 		self.Mlist.append(self.SatEntryItem((_("Middle America"), 'mittelamerika')))
 		self.Mlist.append(self.SatEntryItem((_("South America"), 'suedamerika')))
+		self.Mlist.append(self.SatEntryItem((_("Middle East"), 'naherosten')))
 		self.Mlist.append(self.SatEntryItem((_("East Asia"), 'ostasien')))
-		self.Mlist.append(self.SatEntryItem((_("Middle Asia"), 'zentralasien')))
 		self.Mlist.append(self.SatEntryItem((_("Southeast Asia"), 'suedostasien')))
+		self.Mlist.append(self.SatEntryItem((_("Middle Asia"), 'zentralasien')))
 		self.Mlist.append(self.SatEntryItem((_("Australia"), 'australienundozeanien')))
 		self.session.open(SatPanelb, self.ort, _("Continents"), self.Mlist)
 
@@ -2615,7 +2614,7 @@ class View_Slideshow(Screen):
 			{
 				"cancel": (self.Exit, _("Exit - End")),
 				"red": (self.Exit, _("Exit - End")),
-				"stop": (self.Exit, _("Exit - End")),
+				"stop": (self.Exit, _("Stop - End")),
 				"ok": (self.PlayPause, _("Pause")),
 				"pause": (self.PlayPause, _("Pause")),
 				"playpause": (self.PlayPause, _("Play/Pause")),
