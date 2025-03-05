@@ -60,6 +60,7 @@ import requests
 import ssl
 import warnings
 
+
 PY3 = version_info[0] == 3
 if PY3:
 	from urllib.request import urlopen, Request, pathname2url
