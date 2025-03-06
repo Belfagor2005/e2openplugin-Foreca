@@ -422,8 +422,6 @@ def download_image(url, devicepath):
 
 def remove_icc_profile(devicepath):
 	try:
-		from PIL import Image
-		import warnings
 		warnings.filterwarnings("ignore", "(?s).*iCCP.*", category=UserWarning)
 		img = Image.open(devicepath)
 		img.save(devicepath, icc_profile=None)
@@ -2107,35 +2105,6 @@ class SatPanel(Screen, HelpableScreen):
 			if DEBUG:
 				FAlog("SatBild Critical Error", str(e))
 			self.session.open(MessageBox, _("A critical error occurred: %s" % str(e)), MessageBox.TYPE_ERROR)
-
-	def fetch_url(self, x):
-		menu = self['Mlist'].l.getCurrentSelection()[0][1]
-		if not x.startswith("http"):
-			x = "https:" + x
-		url = x
-		if '[TYPE]' in url:
-			url = url.replace('[TYPE]', menu)
-
-		global foundz
-		foundz = 'jpg'
-		foundPos = url.find("0000.jpg")
-		if DEBUG:
-			FAlog("x= {}".format(x), "url= {}, foundPos= {}".format(url, foundPos))
-		if foundPos == -1:
-			foundPos = url.find(".jpg")
-		if foundPos == -1:
-			foundPos = url.find(".png")
-			foundz = 'png'
-		file = url[foundPos - 10:foundPos]
-		file2 = file[0:4] + "-" + file[4:6] + "-" + file[6:8] + " - " + file[8:10] + " " + _("h")
-		file2 = file2.replace(" ", "")
-		if DEBUG:
-			FAlog("file= %s file2= %s" % (file, file2))
-		req = Request(url, headers=HEADERS)
-		resp = urlopen(req, timeout=10)
-		with open("%s%s.%s" % (CACHE_PATH, file2, foundz), 'wb') as f:
-			f.write(resp.read())
-		return
 
 
 # ------------------------------------------------------------------------------------------
