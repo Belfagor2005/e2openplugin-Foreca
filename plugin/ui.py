@@ -40,7 +40,6 @@ from enigma import (
 	gFont,
 	RT_VALIGN_CENTER,
 )
-from Screens.ChoiceBox import ChoiceBox
 from Screens.HelpMenu import HelpableScreen
 from Screens.MessageBox import MessageBox
 from Screens.Screen import Screen
@@ -50,7 +49,7 @@ from Tools.LoadPixmap import LoadPixmap
 from locale import setlocale, LC_COLLATE, strxfrm
 from os import makedirs, unlink, remove, listdir
 from os.path import exists, join, getsize
-from re import sub, DOTALL, compile, findall
+from re import sub, DOTALL, compile
 from skin import parseFont, parseColor
 from sys import version_info
 from time import strftime
@@ -59,6 +58,9 @@ from twisted.internet.ssl import ClientContextFactory
 import requests
 import ssl
 import warnings
+from twisted.internet.reactor import callInThread
+from requests import get, exceptions
+from datetime import timezone
 
 
 PY3 = version_info[0] == 3
@@ -79,12 +81,6 @@ try:
 	from PIL import Image
 except ImportError:
 	from Image import Image
-
-
-if PY3:
-	from io import BytesIO
-else:
-	from cStringIO import StringIO as BytesIO
 
 
 try:
@@ -1005,7 +1001,11 @@ class ForecaPreview(Screen, HelpableScreen):
 		self["MainList"].show
 		self.cacheTimer = eTimer()
 		self.cacheDialog.start()
-		self.onLayoutFinish.append(self.getPage)
+		# self.onLayoutFinish.append(self.getPage)
+		self.onLayoutFinish.append(self.onLayoutFinished)
+
+	def onLayoutFinished(self):
+		callInThread(self.getPage)
 
 	def StartPage(self):
 		self["Titel"].text = ""
@@ -1017,7 +1017,8 @@ class ForecaPreview(Screen, HelpableScreen):
 		if DEBUG:
 			FAlog("MainList show...")
 		self["MainList"].show
-		self.getPage()
+		# self.getPage()
+		callInThread(self.getPage)
 
 	def getPage(self, page=None):
 		if DEBUG:
@@ -1218,11 +1219,6 @@ class ForecaPreview(Screen, HelpableScreen):
 
 	def MenuCallback(self):
 		global start, fav1, fav2
-		"""
-		fav1 = str(config.plugins.foreca.fav1.value)
-		fav2 = str(config.plugins.foreca.fav2.value)
-		start = str(config.plugins.foreca.home.value)
-		"""
 		fav1 = config.plugins.foreca.fav1.getValue()[config.plugins.foreca.fav1.getValue().rfind("/") + 1:]
 		fav2 = config.plugins.foreca.fav2.getValue()[config.plugins.foreca.fav2.getValue().rfind("/") + 1:]
 		start = config.plugins.foreca.home.getValue()[config.plugins.foreca.home.getValue().rfind("/") + 1:]
@@ -1629,7 +1625,6 @@ class CityPanel(Screen, HelpableScreen):
 			(_("<   >"), _("Prognosis Previous/Next day")),
 			(_("0 - 9"), _("Prognosis (x) days from now"))
 		]
-
 		message += format_message(entries)
 		self.session.open(MessageBox, message, MessageBox.TYPE_INFO)
 
@@ -2126,100 +2121,6 @@ class SatPanel(Screen, HelpableScreen):
 		self.ort = city
 		self.exit()
 
-	def fetch_url(self, x):
-		menu = self['Mlist'].l.getCurrentSelection()[0][1]
-		if not x.startswith("http"):
-			x = "https:" + x
-		url = x
-		if '[TYPE]' in url:
-			url = url.replace('[TYPE]', menu)
-
-		global foundz
-		foundz = 'jpg'
-		foundPos = url.find("0000.jpg")
-		if DEBUG:
-			FAlog("x= {}".format(x), "url= {}, foundPos= {}".format(url, foundPos))
-		if foundPos == -1:
-			foundPos = url.find(".jpg")
-		if foundPos == -1:
-			foundPos = url.find(".png")
-			foundz = 'png'
-		file = url[foundPos - 10:foundPos]
-		file2 = file[0:4] + "-" + file[4:6] + "-" + file[6:8] + " - " + file[8:10] + " " + _("h")
-		file2 = file2.replace(" ", "")
-		if DEBUG:
-			FAlog("file= %s file2= %s" % (file, file2))
-		req = Request(url, headers=HEADERS)
-		resp = urlopen(req, timeout=10)
-		with open("%s%s.%s" % (CACHE_PATH, file2, foundz), 'wb') as f:
-			f.write(resp.read())
-
-	def doContext(self):
-		text = _("Select action")
-		base_url = "https://www.sat24.com"
-
-		try:
-			response = requests.get(base_url + "/en-gb/continent/eu", headers=HEADERS, timeout=10)
-			response.raise_for_status()
-			html = response.text if PY3 else response.content
-		except requests.RequestException as e:
-			print("Error while page download: %s" % str(e))
-			return
-
-		pattern = r'<li class=".*?">\s*<a .*?href="([^"]+)".*?>\s*(.*?)\s*</a>'
-		matches = findall(pattern, html)
-		seen_links = set()
-		menu = []
-
-		for href, title in matches:
-			if "satellite" in title.lower():
-				link = base_url + href
-				if link not in seen_links:
-					menu.append((title.strip(), link))
-					seen_links.add(link)
-
-		def returnToChoiceBox(result=None):
-			self.session.openWithCallback(boxAction, ChoiceBox, title=text, list=menu)
-
-		def boxAction(choice):
-			if choice:
-				title, url = choice
-				devicepath = join(CACHE_PATH, "meteogram.png")
-				try:
-					req = Request(url, headers=HEADERS)
-					resp = urlopen(req, timeout=10)
-					content = resp.read().decode('utf-8') if PY3 else resp.read()
-					pattern = r'<div class="absolute w-full h-full overflow-hidden z-10">.*?<img .*?alt="satLayer".*?src="([^"]+)".*?>'
-					matches = findall(pattern, content, DOTALL)
-					if matches:
-						chosen_link = matches[0]
-						if not chosen_link.startswith("http"):
-							chosen_link = base_url + chosen_link
-						try:
-							from PIL import Image
-							img_response = requests.get(chosen_link, headers=HEADERS, timeout=10)
-							img = Image.open(BytesIO(img_response.content))
-							img = img.convert("RGB")  # Rimuove ICC
-							img.save(devicepath, "PNG")
-							if DEBUG:
-								FAlog("Image dimensions: {}x{}".format(img.width, img.height))
-							self.session.openWithCallback(returnToChoiceBox, PicView, devicepath, 0, False, None)
-						except requests.RequestException as e:
-							if DEBUG:
-								FAlog("Error downloading image: %s" % str(e))
-							returnToChoiceBox()
-					else:
-						if DEBUG:
-							FAlog("Image not found on the page.")
-						returnToChoiceBox()
-				except Exception as e:
-					if DEBUG:
-						FAlog("Error processing page: %s" % str(e))
-					returnToChoiceBox()
-
-		if len(menu) > 0:
-			self.session.openWithCallback(boxAction, ChoiceBox, title=text, list=menu)
-
 	def SatBild(self):
 		try:
 			current_selection = self['Mlist'].l.getCurrentSelection()
@@ -2232,30 +2133,18 @@ class SatPanel(Screen, HelpableScreen):
 				FAlog("SatBild menu= %s" % menu, "CurrentSelection= %s" % current_selection)
 			self.deactivateCacheDialog()
 			if menu == "eumetsat":
-				self.doContext()
+				self.session.open(View_Slideshow, menu, [], 0, True)
+
 			else:
 				try:
 					url = "%s%s?map=%s" % (BASEURL, pathname2url(self.ort), menu)
 					if DEBUG:
 						FAlog("VIDEO URL map = %s" % url)
-					req = Request(url, headers=HEADERS)
-					resp = urlopen(req, timeout=10)
-					content = (resp.read().decode('utf-8') if PY3 else resp.read())
-					start_pattern = r"var urltemplate"
-					end_pattern = r"var timehdrs"
-					section_pattern = compile(r"%s(.*?)%s" % (start_pattern, end_pattern), DOTALL)
-					section_match = section_pattern.search(content)
-
-					if section_match:
-						section_content = section_match.group(1)
-						fulltext = compile(r'(\/\/cache.*?\.(jpg|png))', DOTALL)
-						urls = fulltext.findall(section_content)
-						for url, ext in urls:
-							full_url = 'https:' + url
-							if DEBUG:
-								FAlog("Valid URL:", full_url)
-							self.fetch_url(full_url)
-						self.session.open(View_Slideshow, 0, True)
+						response = get(url, headers=HEADERS, timeout=(3.05, 6))
+						response.raise_for_status()
+						fulltext = compile(r"'(//cache.+?)'", DOTALL)
+						urls = fulltext.findall(response.text)
+						self.session.open(View_Slideshow, menu, urls, 0, True)
 					else:
 						if DEBUG:
 							FAlog("SatBild Warning: No image URLs found in page content.")
@@ -2485,6 +2374,7 @@ class PicView(Screen):
 
 	def __init__(self, session, filelist, index, startslide, plaats=None):
 		self.session = session
+
 		self.bgcolor = config.plugins.foreca.bgcolor.value
 		space = config.plugins.foreca.framesize.value
 		space = space + 5
@@ -2506,6 +2396,7 @@ class PicView(Screen):
 		self["pic"] = Pixmap()
 		self["city"] = Label(plaats)
 		self.filelist = filelist
+		self.startslide = startslide
 		self.old_index = 0
 		self.lastindex = index
 		self.currPic = []
@@ -2516,8 +2407,6 @@ class PicView(Screen):
 		self.picload = ePicLoad()
 		self.picload.PictureData.get().append(self.finish_decode)
 		self.onLayoutFinish.append(self.setPicloadConf)
-
-		self.startslide = startslide
 
 	def setPicloadConf(self):
 		sc = getScale()
@@ -2591,12 +2480,23 @@ class PicView(Screen):
 # ------------------------------------------------------------------------------------------
 
 
-class View_Slideshow(Screen):
+class View_Slideshow(Screen, HelpableScreen):
 
-	def __init__(self, session, pindex=0, startslide=False):
-
+	def __init__(self, session, menu, urls, pindex=0, startslide=False):
 		if DEBUG:
 			FAlog("SlideShow is running...")
+
+		self.session = session
+		self.menu = menu
+		self.urls = urls
+		self.old_index = 0
+		self.startslide = startslide
+		self.picfilelist = []
+		self.lastindex = pindex
+		self.currPic = []
+		self.shownow = True
+		self.dirlistcount = 0
+
 		self.textcolor = config.plugins.foreca.textcolor.value
 		self.bgcolor = config.plugins.foreca.bgcolor.value
 		space = config.plugins.foreca.framesize.value
@@ -2605,11 +2505,15 @@ class View_Slideshow(Screen):
 		self.skin = "<screen position=\"0,0\" size=\"" + str(size_w) + "," + str(size_h) + "\" flags=\"wfNoBorder\" > \
 			<eLabel position=\"0,0\" zPosition=\"0\" size=\"" + str(size_w) + "," + str(size_h) + "\" backgroundColor=\"" + self.bgcolor + "\" /> \
 			<widget name=\"pic\" position=\"" + str(space) + "," + str(space + 40) + "\" size=\"" + str(size_w - (space * 2)) + "," + str(size_h - (space * 2) - 40) + "\" zPosition=\"1\" alphatest=\"on\" /> \
-			<widget name=\"point\" position=\"" + str(space + 5) + "," + str(space + 10) + "\" size=\"20,20\" zPosition=\"2\" pixmap=\"" + THUMB_PATH + "record.png\" alphatest=\"on\" /> \
-			<widget name=\"play_icon\" position=\"" + str(space + 25) + "," + str(space + 10) + "\" size=\"20,20\" zPosition=\"2\" pixmap=\"" + THUMB_PATH + "ico_mp_play.png\"  alphatest=\"on\" /> \
-			<widget name=\"file\" position=\"" + str(space + 45) + "," + str(space + 10) + "\" size=\"" + str(size_w - (space * 2) - 50) + "," + str(fontsize + 5) + "\" font=\"Regular;" + str(fontsize) + "\" halign=\"center\" foregroundColor=\"" + self.textcolor + "\" zPosition=\"2\" noWrap=\"1\" transparent=\"1\" /> \
+			<widget name=\"point\" position=\"" + str(space + 5) + "," + str(space + 4) + "\" size=\"35,35\" zPosition=\"2\" pixmap=\"" + THUMB_PATH + "record.png\" alphatest=\"on\" /> \
+			<widget name=\"play_icon\" position=\"" + str(space + 40) + "," + str(space + 2) + "\" size=\"40,40\" zPosition=\"2\" pixmap=\"" + THUMB_PATH + "ico_mp_play.png\"  alphatest=\"on\" /> \
+			<widget name=\"pause_icon\" position=\"" + str(space + 40) + "," + str(space + 2) + "\" size=\"40,40\" zPosition=\"2\" pixmap=\"" + THUMB_PATH + "ico_mp_pause.png\"  alphatest=\"on\" /> \
+			<widget name=\"file\" position=\"" + str(space + 85) + "," + str(space + 4) + "\" size=\"" + str(size_w - (space * 2) - 50) + "," + str(fontsize + 5) + "\" font=\"Regular;" + str(fontsize) + "\" halign=\"left\" foregroundColor=\"" + self.textcolor + "\" zPosition=\"2\" noWrap=\"1\" transparent=\"1\" /> \
+			<widget name=\"help_icon\"  position=\"20,70\" size=\"53,38\" zPosition=\"2\" pixmap=\"/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_help.png\" alphatest=\"on\" /> \
 			</screen>"
+
 		Screen.__init__(self, session)
+		HelpableScreen.__init__(self)
 		self["actions"] = HelpableActionMap(
 			self, "ForecaActions",
 			{
@@ -2631,13 +2535,11 @@ class View_Slideshow(Screen):
 		self["point"] = Pixmap()
 		self["pic"] = Pixmap()
 		self["play_icon"] = Pixmap()
+		self["pause_icon"] = Pixmap()
+		self["help_icon"] = Pixmap()
+		self["play_icon"].hide()
+		self["pause_icon"].hide()
 		self["file"] = Label(_("Please wait, photo is being loaded ..."))
-		self.old_index = 0
-		self.picfilelist = []
-		self.lastindex = pindex
-		self.currPic = []
-		self.shownow = True
-		self.dirlistcount = 0
 
 		self.filelist = FileList(CACHE_PATH, showDirectories=False, matchingPattern=r"^.*\.(jpg|png)$", useServiceRef=False)
 		for x in self.filelist.getFileList():
@@ -2660,6 +2562,75 @@ class View_Slideshow(Screen):
 		if self.maxentry >= 0:
 			self.onLayoutFinish.append(self.setPicloadConf)
 		if startslide is True:
+			self.PlayPause()
+
+		self.onLayoutFinish.append(self.layoutFinished)
+
+	def layoutFinished(self):
+		if self.menu == "eumetsat":
+			callInThread(self.getNpreparePictures)
+		else:
+			callInThread(self.getPictures)
+
+	def getNpreparePictures(self):
+		current = datetime.now(tz=timezone(timedelta(hours=-1)))
+		cutmin = int(current.strftime("%M")) // 15 * 15  # round to last 15 minutes of last date
+		past = datetime(current.year, current.month, current.day, current.hour, cutmin, 0) - timedelta(minutes=30)
+		tmpfile = join(CACHE_PATH, "temppic.jpeg")
+		for index in range(12):
+			url = "https://imn-api.meteoplaza.com/v4/nowcast/tiles/radarsatellite-world/%s/4/2/5/8/12?outputtype=jpeg" % past.strftime("%Y%m%d%H%M%S")
+			filename = "%s-%s-%s-%s h.jpg" % (past.strftime("%Y"), past.strftime("%m"), past.strftime("%d"), past.strftime("%H"))
+			try:
+				response = get(url, headers=HEADERS, timeout=(3.05, 6))
+				response.raise_for_status()
+				with open(tmpfile, "wb") as file:
+					file.write(response.content)
+				imgorg = Image.open(tmpfile)
+				worg, horg = imgorg.size
+				wnew, hnew = 1470, 1102  # same size as on the homepage
+				xnew, ynew = (worg - wnew) / 2, horg - hnew
+				newimg = imgorg.crop((xnew, ynew, wnew, hnew))
+				newimg.convert("RGB").save(join(CACHE_PATH, filename), format="jpeg", progressive=True)
+			except exceptions.RequestException as error:
+				FAlog("Error in module 'getNpreparePictures': %s" % error)
+			past -= timedelta(minutes=60)
+		if exists(tmpfile):
+			remove(tmpfile)
+		self.updatePiclist()
+
+	def getPictures(self):
+		for url in self.urls:  # load Picture for Slideshow
+			url = "http:%s" % url.replace("[TYPE]", self.menu)  # e.g. https://cache.foreca.net/i/sat/__eur__-sat-20241109120000.jpg
+			urlname = url.split("-")[-1]
+			filename = "%s-%s-%s-%s h.jpg" % (urlname[:4], urlname[4:6], urlname[6:8], urlname[8:10])
+			try:
+				response = get(url, headers=HEADERS, timeout=(3.05, 6))
+				response.raise_for_status()
+				with open(join(CACHE_PATH, filename), "wb") as file:
+					file.write(response.content)
+			except exceptions.RequestException as error:
+				FAlog("Error in module 'getPictures': %s" % error)
+
+	def updatePiclist(self):
+		self.old_index = 0
+		self.picfilelist = []
+		self.currPic = []
+		self.shownow = True
+		self.dirlistcount = 0
+		self.filelist = FileList(CACHE_PATH, showDirectories=False, matchingPattern="^.*.(jpg)", useServiceRef=False)
+		for x in self.filelist.getFileList():
+			if x[0][0]:
+				if not x[0][1]:
+					self.picfilelist.append(x[0][0])
+				else:
+					self.dirlistcount += 1
+		self.maxentry = len(self.picfilelist) - 1
+		self.pindex = self.lastindex - self.dirlistcount
+		if self.pindex < 0:
+			self.pindex = 0
+		if self.maxentry >= 0:
+			self.setPicloadConf()
+		if self.startslide:
 			self.PlayPause()
 
 	def info(self):
@@ -2743,7 +2714,6 @@ class View_Slideshow(Screen):
 			filepath = CACHE_PATH + filepath
 		if not exists(filepath):
 			return
-
 		try:
 			self.picload.startDecode(filepath)
 		except Exception as e:
@@ -2772,9 +2742,11 @@ class View_Slideshow(Screen):
 		if self.slideTimer.isActive():
 			self.slideTimer.stop()
 			self["play_icon"].hide()
+			self["pause_icon"].show()
 		else:
 			self.slideTimer.start(config.plugins.foreca.slidetime.value * 1000)
 			self["play_icon"].show()
+			self["pause_icon"].hide()
 			self.nextPic()
 
 	def prevPic(self):
