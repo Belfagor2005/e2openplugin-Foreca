@@ -31,7 +31,7 @@ from Components.config import (
 	KEY_0,
 	ConfigText,
 )
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from enigma import (
 	eListboxPythonMultiContent,
 	ePicLoad,
@@ -1337,11 +1337,17 @@ class ForecaPreview(Screen, HelpableScreen):
 		plaats = _(self.ort[0:foundPos]) + ", " + self.ort[foundPos + 1:len(self.ort)]
 		self.plaats = plaats.replace("_", " ")
 		print('getForecaPage self.plaats=', self.plaats)
-		# Set 'Titel' with formatted date
+
+		"""
 		self["Titel"].text = datum2
 		self["Titel3"].text = ''
-		# Set 'Titel4' with location only
-		self["Titel5"].text = ''  # datum2
+		self["Titel5"].text = ''
+
+		"""
+		self["Titel"].text = self.plaats + "  -  " + datum2
+		self["Titel3"].text = self.ort[:foundPos].replace("_", " ") + "\r\n" + self.ort[foundPos + 1:].replace("_", " ") + "\r\n" + datum2
+		self["Titel4"].text = self.plaats
+		self["Titel5"].text = datum2
 
 		self.titel()
 		self["MainList"].SetList(datalist)
