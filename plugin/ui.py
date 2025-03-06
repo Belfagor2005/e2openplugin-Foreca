@@ -53,14 +53,13 @@ from re import sub, DOTALL, compile
 from requests import get, exceptions
 from skin import parseFont, parseColor
 from sys import version_info
-from time import strftime
+# from time import strftime
 from twisted.internet._sslverify import ClientTLSOptions
 from twisted.internet.reactor import callInThread
 from twisted.internet.ssl import ClientContextFactory
 import requests
 import ssl
 import warnings
-
 
 PY3 = version_info[0] == 3
 if PY3:
@@ -340,8 +339,9 @@ if not exists(CACHE_PATH):
 def FAlog(info, wert=""):
 	if config.plugins.foreca.debug.value:
 		try:
+			now = datetime.now()
 			with open('/tmp/foreca.log', 'a') as f:
-				f.write('{} {} {}\r\n'.format(strftime('%H:%M:%S'), info, wert))
+				f.write('{} {} {}\r\n'.format(now.strftime('%H:%M:%S'), info, wert))
 		except IOError:
 			print('[Foreca] Logging-Error')
 	else:
@@ -1088,7 +1088,6 @@ class ForecaPreview(Screen, HelpableScreen):
 		"""
 		if DEBUG:
 			FAlog("day link:", MAIN_PAGE)
-
 		self.StartPage()
 
 	def info(self):
@@ -2104,7 +2103,7 @@ class SatPanel(Screen, HelpableScreen):
 		except Exception as e:
 			if DEBUG:
 				FAlog("SatBild Critical Error", str(e))
-			self.session.open(MessageBox, _("A critical error occurred: %s" % str(e)), MessageBox.TYPE_ERROR)
+			# self.session.open(MessageBox, _("A critical error occurred: %s" % str(e)), MessageBox.TYPE_ERROR)
 
 
 # ------------------------------------------------------------------------------------------
@@ -2458,6 +2457,7 @@ class View_Slideshow(Screen, HelpableScreen):
 			</screen>"
 
 		Screen.__init__(self, session)
+		super(View_Slideshow, self).__init__(session)
 		HelpableScreen.__init__(self)
 		self["actions"] = HelpableActionMap(
 			self, "ForecaActions",
@@ -2518,7 +2518,32 @@ class View_Slideshow(Screen, HelpableScreen):
 			callInThread(self.getPictures)
 
 	def getNpreparePictures(self):
-		current = datetime.now(tz=timezone(timedelta(hours=-1)))
+		# current = datetime.now(tz=timezone(timedelta(hours=-1)))
+		current = ''
+		try:
+			# Python 3.x
+			from datetime import timezone
+			current = datetime.datetime.now(tz=timezone(datetime.timedelta(hours=-1)))
+		except ImportError:
+			# Python 2.x:
+
+			class MyTimezone(datetime.tzinfo):
+
+				def __init__(self, offset):
+					self.offset = offset
+
+				def utcoffset(self, dt):
+					return self.offset
+
+				def tzname(self, dt):
+					return "Custom Timezone"
+
+				def dst(self, dt):
+					return datetime.timedelta(0)
+
+			tz_offset = MyTimezone(datetime.timedelta(hours=-1))
+			current = datetime.datetime.now(tz=tz_offset)
+		print("Current datetime:", current)
 		cutmin = int(current.strftime("%M")) // 15 * 15  # round to last 15 minutes of last date
 		past = datetime(current.year, current.month, current.day, current.hour, cutmin, 0) - timedelta(minutes=30)
 		tmpfile = join(CACHE_PATH, "temppic.jpeg")
@@ -2844,7 +2869,6 @@ class PicSetup(Screen, ConfigListScreen):
 	def createSetup(self):
 		self.editListEntry = None
 		self.list = []
-		# self.list.append(getConfigListEntry(_("Type Server"), config.plugins.foreca.languages))
 		self.list.append(getConfigListEntry(_("Select units"), config.plugins.foreca.units))
 		self.list.append(getConfigListEntry(_("Select time format"), config.plugins.foreca.time))
 		self.list.append(getConfigListEntry(_("City names as labels in the Main screen"), config.plugins.foreca.citylabels))
