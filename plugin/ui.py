@@ -31,7 +31,7 @@ from Components.config import (
 	KEY_0,
 	ConfigText,
 )
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enigma import (
 	eListboxPythonMultiContent,
 	ePicLoad,
@@ -40,27 +40,26 @@ from enigma import (
 	gFont,
 	RT_VALIGN_CENTER,
 )
+from locale import setlocale, LC_COLLATE, strxfrm
 from Screens.HelpMenu import HelpableScreen
 from Screens.MessageBox import MessageBox
 from Screens.Screen import Screen
 from Tools.BoundFunction import boundFunction
 from Tools.Directories import resolveFilename, SCOPE_CONFIG, SCOPE_PLUGINS
 from Tools.LoadPixmap import LoadPixmap
-from locale import setlocale, LC_COLLATE, strxfrm
 from os import makedirs, unlink, remove, listdir
 from os.path import exists, join, getsize
 from re import sub, DOTALL, compile
+from requests import get, exceptions
 from skin import parseFont, parseColor
 from sys import version_info
 from time import strftime
 from twisted.internet._sslverify import ClientTLSOptions
+from twisted.internet.reactor import callInThread
 from twisted.internet.ssl import ClientContextFactory
 import requests
 import ssl
 import warnings
-from twisted.internet.reactor import callInThread
-from requests import get, exceptions
-from datetime import timezone
 
 
 PY3 = version_info[0] == 3
@@ -236,7 +235,7 @@ VERSION = "3.3.8"
 #  RECODE FROM LULULLA
 # 3.3.8 Mahor fix on clean all code unnecessay / append new PY3
 #  Translate 90% complete
-#
+#  # thank's Orlandoxx  restore Eumsat screen picxview
 #  RECODE FROM LULULLA
 
 
@@ -252,41 +251,10 @@ class WebClientContextFactory(ClientContextFactory):
 		return ctx
 
 
-languages = [
-	("no", "NO (Default)"),
-	("com", "English"),
-	("ba", "Bosnia ed Erzegovina"),
-	("nz", "New Zealand"),
-	("bg", "българск"),
-	("cs", "Čeština"),
-	("da", "Dansk"),
-	("de", "Deutsch"),
-	("com/el", "ελληνικά"),
-	("es", "Español"),
-	("et", "Eesti"),
-	("https://www.farsiweather.com/", "زبان فارسی"),
-	("fr", "Français"),
-	("hr", "Hrvatski"),
-	("in", "तब"),
-	("it", "Italiano"),
-	("lv", "Latviešu"),
-	("hu", "Magyar"),
-	("nl", "Nederlands"),
-	("pl", "Polski"),
-	("pt", "Português"),
-	("ro", "Româneşte"),
-	("ru", "Русский"),
-	("sk", "Slovenčina"),
-	("fi", "Suomi"),
-	("sv", "Svenska"),
-	("tr", "Türkçe"),
-]
-
 pluginPrintname = "[Foreca Ver. %s]" % VERSION
-# config.plugins.foreca.languages = ConfigSelection(default="no", choices=languages)
 config.plugins.foreca.home = ConfigText(default="Germany/Berlin", fixed_size=False)
 config.plugins.foreca.fav1 = ConfigText(default="United_States/New_York/New_York_City", fixed_size=False)
-config.plugins.foreca.fav2 = ConfigText(default="Japan/Tokyo", fixed_size=False)
+config.plugins.foreca.fav2 = ConfigText(default="Italy/Rome", fixed_size=False)
 config.plugins.foreca.resize = ConfigSelection(default="0", choices=[("0", _("simple")), ("1", _("better"))])
 config.plugins.foreca.bgcolor = ConfigSelection(default="#00000000", choices=[("#00000000", _("black")), ("#009eb9ff", _("blue")), ("#00ff5a51", _("red")), ("#00ffe875", _("yellow")), ("#0038FF48", _("green"))])
 config.plugins.foreca.textcolor = ConfigSelection(default="#0038FF48", choices=[("#00000000", _("black")), ("#009eb9ff", _("blue")), ("#00ff5a51", _("red")), ("#00ffe875", _("yellow")), ("#0038FF48", _("green"))])
@@ -816,11 +784,7 @@ class ForecaPreview(Screen, HelpableScreen):
 		fav1 = config.plugins.foreca.fav1.getValue()[config.plugins.foreca.fav1.getValue().rfind("/") + 1:]
 		fav2 = config.plugins.foreca.fav2.getValue()[config.plugins.foreca.fav2.getValue().rfind("/") + 1:]
 		start = config.plugins.foreca.home.getValue()[config.plugins.foreca.home.getValue().rfind("/") + 1:]
-		"""
-		print(pluginPrintname, "fav1 location:", fav1)
-		print(pluginPrintname, "fav2 location:", fav2)
-		print(pluginPrintname, "Start Home location:", start)
-		"""
+
 		# Get home location
 		self.ort = config.plugins.foreca.home.value
 		start = self.ort[self.ort.rfind("/") + 1:]
@@ -1001,7 +965,6 @@ class ForecaPreview(Screen, HelpableScreen):
 		self["MainList"].show
 		self.cacheTimer = eTimer()
 		self.cacheDialog.start()
-		# self.onLayoutFinish.append(self.getPage)
 		self.onLayoutFinish.append(self.onLayoutFinished)
 
 	def onLayoutFinished(self):
@@ -1017,7 +980,6 @@ class ForecaPreview(Screen, HelpableScreen):
 		if DEBUG:
 			FAlog("MainList show...")
 		self["MainList"].show
-		# self.getPage()
 		callInThread(self.getPage)
 
 	def getPage(self, page=None):
@@ -1159,16 +1121,11 @@ class ForecaPreview(Screen, HelpableScreen):
 	def OKCallback(self, callback=None):
 		global fav1, fav2
 		print('OKCallback callback=,', str(callback))
-		"""
-		fav1 = config.plugins.foreca.fav1.getValue()
-		fav2 = config.plugins.foreca.fav2.getValue()
-		start = config.plugins.foreca.home.getValue()
-		"""
+
 		fav1 = config.plugins.foreca.fav1.getValue()[config.plugins.foreca.fav1.getValue().rfind("/") + 1:]
 		fav2 = config.plugins.foreca.fav2.getValue()[config.plugins.foreca.fav2.getValue().rfind("/") + 1:]
-		# start = config.plugins.foreca.home.getValue()[config.plugins.foreca.home.getValue().rfind("/") + 1:]
 
-		self.ort = config.plugins.foreca.home.getValue()  # start
+		self.ort = config.plugins.foreca.home.getValue()
 		if callback is not None:
 			self.ort = callback
 		self.tag = 0
@@ -1260,27 +1217,14 @@ class ForecaPreview(Screen, HelpableScreen):
 		if DEBUG:
 			FAlog("titel[0]=%s" % titel[0])
 
-		def translate_description_gettext(description, translation_dict):
-			cleaned_description = sub(r'[\t\r\n]', ' ', description).strip()
-			words = sub(r'([.,!?])', r' \1 ', cleaned_description).split()
-			translated_words = []
-			for word in words:
-				is_capitalized = word[0].isupper()
-				translated_word = translation_dict.get(word.lower(), word)
-				if is_capitalized:
-					translated_word = translated_word.capitalize()
-				translated_words.append(translated_word)
-				print("translated_words=", translated_words)
-			return ' '.join(translated_words)
-
 		translation_dict = self.load_translation_dict(lng)
-		titel[0] = translate_description_gettext(titel[0], translation_dict)
+		# titel[0] = translate_description_gettext(titel[0], translation_dict)
+		titel[0] = self.translate_description(titel[0], translation_dict)
 
 		fulltext = compile(r'<!-- START -->(.+?)<h6>', DOTALL)
 		link = str(fulltext.findall(html))
 		fulltext = compile(r'<a href=".+?>(.+?)<.+?', DOTALL)
 		tag = str(fulltext.findall(link))
-		# print "Day ", tag
 
 		# ---------- Wetterdaten -----------
 
@@ -1421,11 +1365,19 @@ class ForecaPreview(Screen, HelpableScreen):
 		return translation_dict
 
 	def translate_description(self, description, translation_dict):
-		cleaned_description = sub(r'[\t\r\n]', ' ', description).strip()
-		if cleaned_description.lower() in translation_dict:
-			return translation_dict[cleaned_description.lower()]
-		words = cleaned_description.split()
-		return ' '.join([translation_dict.get(word.lower(), word) for word in words])
+		# Clean the description from tabs, carriage returns, and newlines
+		cleaned_description = sub(r"[\t\r\n]", " ", description).strip()
+		# Separate punctuation to avoid incorrect translations
+		words = sub(r"([.,!?])", r" \1 ", cleaned_description).split()
+		translated_words = []
+		for word in words:
+			is_capitalized = word[0].isupper() if word else False
+			translated_word = translation_dict.get(word.lower(), word)
+			# Restore capitalization if needed
+			if is_capitalized:
+				translated_word = translated_word.capitalize()
+			translated_words.append(translated_word)
+		return " ".join(translated_words).replace(" .", ".").replace(" ,", ",").replace(" !", "!").replace(" ?", "?")
 
 	def filter_dia(self, text):
 		filterItem = 0
@@ -1721,7 +1673,6 @@ class CityPanel(Screen, HelpableScreen):
 	def exit(self):
 		if self.search_ok is True:
 			self.search_ok = False
-		# self.city[self.city.rfind("/") + 1:]
 		self.close(self.city)
 
 	def ok(self):
@@ -1737,7 +1688,7 @@ class CityPanel(Screen, HelpableScreen):
 		self.city = sub(r" ", "_", self['Mlist'].l.getCurrentSelection()[0][1])
 		if DEBUG:
 			FAlog("Home:", self.city)
-		config.plugins.foreca.home.setValue(self.city)  # ✅ FIX
+		config.plugins.foreca.home.setValue(self.city)
 		config.plugins.foreca.home.save()
 		configfile.save()
 		start = self.city[self.city.rfind("/") + 1:]
@@ -1752,7 +1703,6 @@ class CityPanel(Screen, HelpableScreen):
 		config.plugins.foreca.fav1.setValue = (self.city)
 		config.plugins.foreca.fav1.save()
 		configfile.save()
-		# fav1 = self.city[self.city.rfind("/") + 1:len(self.city)]  # ✅ FIX
 		fav1 = self.city[self.city.rfind("/") + 1:]
 		message = "%s %s" % (_("This city is stored as favorite 1!\n\n                             "), self.city)
 		self.session.open(MessageBox, message, MessageBox.TYPE_INFO, timeout=8)
@@ -1762,10 +1712,9 @@ class CityPanel(Screen, HelpableScreen):
 		self.city = sub(r" ", "_", self['Mlist'].l.getCurrentSelection()[0][1])
 		if DEBUG:
 			FAlog("Fav2:", self.city)
-		config.plugins.foreca.fav2.setValue = (self.city)  # ✅ FIX
+		config.plugins.foreca.fav2.setValue = (self.city)
 		config.plugins.foreca.fav2.save()
 		configfile.save()
-		# fav2 = self.city[self.city.rfind("/") + 1:len(self.city)]
 		fav2 = self.city[self.city.rfind("/") + 1:]
 		message = "%s %s" % (_("This city is stored as favorite 2!\n\n                             "), self.city)
 		self.session.open(MessageBox, message, MessageBox.TYPE_INFO, timeout=8)
@@ -1956,7 +1905,7 @@ class SatPanel(Screen, HelpableScreen):
 			"Server URL:    %s\n"
 		) % BASEURL))
 		entries = [
-			("VERSION", "%s" % VERSION),  # Non serve la traduzione
+			("VERSION", "%s" % VERSION),
 			(_("Ok"), _("Show map")),
 			(_("Red"), _("Continents")),
 			(_("Green"), _("Europe")),
@@ -2318,10 +2267,6 @@ class SatPanelb(Screen, HelpableScreen):
 
 	def OKCallback(self, callback=None):
 		global fav1, fav2, start
-		# self.ort = city
-		# fav1 = str(config.plugins.foreca.fav1.getValue())
-		# fav2 = str(config.plugins.foreca.fav2.getValue())
-		# start = str(config.plugins.foreca.home.getValue())
 		fav1 = config.plugins.foreca.fav1.getValue()[config.plugins.foreca.fav1.getValue().rfind("/") + 1:]
 		fav2 = config.plugins.foreca.fav2.getValue()[config.plugins.foreca.fav2.getValue().rfind("/") + 1:]
 		start = config.plugins.foreca.home.getValue()[config.plugins.foreca.home.getValue().rfind("/") + 1:]
@@ -2922,13 +2867,6 @@ class PicSetup(Screen, ConfigListScreen):
 		current_item = str(self["Mlist"].getCurrent()[1].getText())
 		self.config_entry = None
 
-		"""
-		print("current_item:", type(current_item), current_item)
-		print("config.plugins.foreca.home:", type(config.plugins.foreca.home), config.plugins.foreca.home.value)
-		print("config.plugins.foreca.fav1:", type(config.plugins.foreca.fav1), config.plugins.foreca.fav1.value)
-		print("config.plugins.foreca.fav2:", type(config.plugins.foreca.fav2), config.plugins.foreca.fav2.value)
-		"""
-
 		if current_item == config.plugins.foreca.home.value:
 			self.config_entry = config.plugins.foreca.home
 		elif current_item == config.plugins.foreca.fav1.value:
@@ -2969,11 +2907,6 @@ class PicSetup(Screen, ConfigListScreen):
 		if self.config_entry is None:
 			print("ERROR: self.config_entry is still None after restoring!")
 			return
-		"""
-		print("Config entry actual:", self.config_entry, type(self.config_entry))
-		print("Available methods:", dir(self.config_entry))
-		print("Checking if setValue exists:", hasattr(self.config_entry, "setValue"))
-		"""
 
 		if not callable(getattr(self.config_entry, "setValue", None)):
 			print("ERROR: setValue is not callable! It is:", type(self.config_entry.setValue))
