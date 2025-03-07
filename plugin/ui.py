@@ -53,13 +53,13 @@ from re import sub, DOTALL, compile
 from requests import get, exceptions
 from skin import parseFont, parseColor
 from sys import version_info
-# from time import strftime
 from twisted.internet._sslverify import ClientTLSOptions
 from twisted.internet.reactor import callInThread
 from twisted.internet.ssl import ClientContextFactory
 import requests
 import ssl
 import warnings
+# import datetime
 
 PY3 = version_info[0] == 3
 if PY3:
@@ -345,12 +345,34 @@ if not exists(CACHE_PATH):
 		pass
 
 
+def get_current_time():
+	try:
+		from datetime import timezone
+		return datetime.datetime.now(tz=timezone(datetime.timedelta(hours=-1)))
+	except ImportError:
+		class MyTimezone(datetime.tzinfo):
+			def __init__(self, offset):
+				self.offset = offset
+
+			def utcoffset(self, dt):
+				return self.offset
+
+			def tzname(self, dt):
+				return "Custom Timezone"
+
+			def dst(self, dt):
+				return datetime.timedelta(0)
+
+		tz_offset = MyTimezone(datetime.timedelta(hours=-1))
+		return datetime.datetime.now(tz=tz_offset)
+
+
 def FAlog(info, wert=""):
 	if config.plugins.foreca.debug.value:
 		try:
-			now = datetime.now()
+			now = get_current_time()
 			with open('/tmp/foreca.log', 'a') as f:
-				f.write('{} {} {}\r\n'.format(now.strftime('%H:%M:%S'), info, wert))
+				f.write('{} {} {}'.format(now.strftime('%H:%M:%S'), info, wert))
 		except IOError:
 			print('[Foreca] Logging-Error')
 	else:
@@ -778,9 +800,8 @@ class ForecaPreview(Screen, HelpableScreen):
 	def __init__(self, session):
 		global MAIN_PAGE, menu
 		self.session = session
-		now = datetime.now()
+		now = get_current_time()
 		heute = now.strftime("%Y%m%d")
-
 		if DEBUG:
 			FAlog("determined local date:", str(heute))
 
@@ -1074,7 +1095,7 @@ class ForecaPreview(Screen, HelpableScreen):
 	def futurdata(self, ztag=0):
 		global MAIN_PAGE
 		# Get the current date and time
-		now = datetime.now()
+		now = get_current_time()
 		# Calculate new date by adding day tags
 		future_date = now + timedelta(days=ztag)
 		morgen = future_date.strftime("%Y%m%d")
@@ -1127,7 +1148,6 @@ class ForecaPreview(Screen, HelpableScreen):
 	def OKCallback(self, callback=None):
 		global fav1, fav2
 		print('OKCallback callback=,', str(callback))
-
 		fav1 = config.plugins.foreca.fav1.getValue()[config.plugins.foreca.fav1.getValue().rfind("/") + 1:]
 		fav2 = config.plugins.foreca.fav2.getValue()[config.plugins.foreca.fav2.getValue().rfind("/") + 1:]
 
@@ -2524,30 +2544,7 @@ class View_Slideshow(Screen, HelpableScreen):
 			callInThread(self.getPictures)
 
 	def getNpreparePictures(self):
-		from datetime import timezone
-		current = datetime.now(tz=timezone(timedelta(hours=-1)))
-		# # for vix image
-		# current = ''
-		# try:
-			# from datetime import timezone
-			# current = datetime.datetime.now(tz=timezone(datetime.timedelta(hours=-1)))
-		# except ImportError:
-			# class MyTimezone(datetime.tzinfo):
-
-				# def __init__(self, offset):
-					# self.offset = offset
-
-				# def utcoffset(self, dt):
-					# return self.offset
-
-				# def tzname(self, dt):
-					# return "Custom Timezone"
-
-				# def dst(self, dt):
-					# return datetime.timedelta(0)
-
-			# tz_offset = MyTimezone(datetime.timedelta(hours=-1))
-			# current = datetime.datetime.now(tz=tz_offset)
+		current = get_current_time()
 		print("Current datetime:", current)
 		cutmin = int(current.strftime("%M")) // 15 * 15  # round to last 15 minutes of last date
 		past = datetime(current.year, current.month, current.day, current.hour, cutmin, 0) - timedelta(minutes=30)
