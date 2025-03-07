@@ -324,8 +324,8 @@ if not exists(CACHE_PATH):
 
 def get_current_time():
     try:
-        from datetime import datetime, timezone
-        return datetime.now(tz=timezone(datetime.timedelta(hours=-1)))
+        from datetime import datetime, timedelta, timezone
+        return datetime.now(tz=timezone(timedelta(hours=-1)))
     except ImportError:
         class MyTimezone(datetime.tzinfo):
             def __init__(self, offset):
@@ -338,10 +338,10 @@ def get_current_time():
                 return "Custom Timezone"
 
             def dst(self, dt):
-                return datetime.timedelta(0)
+                return timedelta(0)
 
-        tz_offset = MyTimezone(datetime.timedelta(hours=-1))
-        return datetime.datetime.now(tz=tz_offset)
+        tz_offset = MyTimezone(timedelta(hours=-1))
+        return datetime.now(tz=tz_offset)
 
 
 def FAlog(info, wert=""):
