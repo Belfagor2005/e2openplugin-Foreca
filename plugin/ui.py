@@ -323,25 +323,26 @@ if not exists(CACHE_PATH):
 
 
 def get_current_time():
-	try:
-		from datetime import timezone
-		return datetime.datetime.now(tz=timezone(datetime.timedelta(hours=-1)))
-	except ImportError:
-		class MyTimezone(datetime.tzinfo):
-			def __init__(self, offset):
-				self.offset = offset
+    try:
+        from datetime import datetime, timezone
+        return datetime.now(tz=timezone(datetime.timedelta(hours=-1)))
+    except ImportError:
+        class MyTimezone(datetime.tzinfo):
+            def __init__(self, offset):
+                self.offset = offset
 
-			def utcoffset(self, dt):
-				return self.offset
+            def utcoffset(self, dt):
+                return self.offset
 
-			def tzname(self, dt):
-				return "Custom Timezone"
+            def tzname(self, dt):
+                return "Custom Timezone"
 
-			def dst(self, dt):
-				return datetime.timedelta(0)
+            def dst(self, dt):
+                return datetime.timedelta(0)
 
-		tz_offset = MyTimezone(datetime.timedelta(hours=-1))
-		return datetime.datetime.now(tz=tz_offset)
+        tz_offset = MyTimezone(datetime.timedelta(hours=-1))
+        return datetime.datetime.now(tz=tz_offset)
+
 
 def FAlog(info, wert=""):
 	if config.plugins.foreca.debug.value:
