@@ -319,6 +319,15 @@ THUMB_PATH = resolveFilename(SCOPE_PLUGINS) + "Extensions/Foreca/thumb/"
 print("BASEURL in uso:", BASEURL)
 
 DEBUG = config.plugins.foreca.debug.value
+AGENTS = [
+	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.82 Safari/537.36",
+	"Mozilla/5.0 (iPhone; CPU iPhone OS 14_4_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.3 Mobile/15E148 Safari/604.1",
+	"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/110.0",
+	"Mozilla/4.0 (compatible; MSIE 9.0; Windows NT 6.1)",
+	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.141 Safari/537.36 Edge/87.0.664.75",
+	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.102 Safari/537.36 Edge/18.18363"
+]
+
 
 if DEBUG:
 	print(pluginPrintname, "Debug enabled")
@@ -1740,10 +1749,7 @@ class CityPanel(Screen, HelpableScreen):
 
 class SatPanelList(MenuList):
 
-	if HD:
-		ItemSkin = 143
-	else:
-		ItemSkin = 123
+	ItemSkin = 143 if HD else 123
 
 	def __init__(self, list, font0=28, font1=16, itemHeight=ItemSkin, enableWrapAround=True):
 		MenuList.__init__(self, [], False, eListboxPythonMultiContent)
@@ -2102,7 +2108,6 @@ class SatPanel(Screen, HelpableScreen):
 					else:
 						if DEBUG:
 							FAlog("SatBild Warning: No image URLs found in page content.")
-						self.session.open(MessageBox, _("No satellite images found."), MessageBox.TYPE_INFO)
 						return
 				except Exception as e:
 					self.session.open(MessageBox, _("Failed to process satellite data: %s" % str(e)), MessageBox.TYPE_ERROR)
@@ -2119,10 +2124,7 @@ class SatPanel(Screen, HelpableScreen):
 
 class SatPanelListb(MenuList):
 
-	if HD:
-		ItemSkin = 143
-	else:
-		ItemSkin = 123
+	ItemSkin = 143 if HD else 123
 
 	def __init__(self, list, font0=24, font1=16, itemHeight=ItemSkin, enableWrapAround=True):
 		MenuList.__init__(self, [], False, eListboxPythonMultiContent)
@@ -2324,7 +2326,6 @@ class PicView(Screen):
 
 	def __init__(self, session, filelist, index, startslide, plaats=None):
 		self.session = session
-
 		self.bgcolor = config.plugins.foreca.bgcolor.value
 		space = config.plugins.foreca.framesize.value
 		space = space + 5
@@ -2380,7 +2381,6 @@ class PicView(Screen):
 		if self.shownow and len(self.currPic):
 			self.shownow = False
 			if self.currPic[0]:
-				# remove_icc_profile(self.currPic[0])
 				print("[ShowPicture] Imposto l'immagine:", self.currPic[0])
 				self["pic"].instance.setPixmap(self.currPic[0].__deref__())
 			else:
@@ -2463,7 +2463,7 @@ class View_Slideshow(Screen, HelpableScreen):
 			</screen>"
 
 		Screen.__init__(self, session)
-		super(View_Slideshow, self).__init__(session)
+		# super(View_Slideshow, self).__init__(session)
 		HelpableScreen.__init__(self)
 		self["actions"] = HelpableActionMap(
 			self, "ForecaActions",
@@ -2471,9 +2471,9 @@ class View_Slideshow(Screen, HelpableScreen):
 				"cancel": (self.Exit, _("Exit - End")),
 				"red": (self.Exit, _("Exit - End")),
 				"stop": (self.Exit, _("Stop - End")),
-				"ok": (self.PlayPause, _("Pause")),
-				"pause": (self.PlayPause, _("Pause")),
-				"playpause": (self.PlayPause, _("Play/Pause")),
+				"ok": (self.PlayPause, _("Pause - Pause")),
+				"pause": (self.PlayPause, _("Pause - Pause")),
+				"play": (self.PlayPause, _("Play - Play")),
 				"previous": (self.prevPic, _("Left - Previous")),
 				"next": (self.nextPic, _("Right - Next")),
 				"left": (self.prevPic, _("Left - Previous")),
@@ -2524,40 +2524,41 @@ class View_Slideshow(Screen, HelpableScreen):
 			callInThread(self.getPictures)
 
 	def getNpreparePictures(self):
-		# current = datetime.now(tz=timezone(timedelta(hours=-1)))
-		current = ''
-		try:
-			# Python 3.x
-			from datetime import timezone
-			current = datetime.datetime.now(tz=timezone(datetime.timedelta(hours=-1)))
-		except ImportError:
-			# Python 2.x:
+		from datetime import timezone
+		current = datetime.now(tz=timezone(timedelta(hours=-1)))
+		# # for vix image
+		# current = ''
+		# try:
+			# from datetime import timezone
+			# current = datetime.datetime.now(tz=timezone(datetime.timedelta(hours=-1)))
+		# except ImportError:
+			# class MyTimezone(datetime.tzinfo):
 
-			class MyTimezone(datetime.tzinfo):
+				# def __init__(self, offset):
+					# self.offset = offset
 
-				def __init__(self, offset):
-					self.offset = offset
+				# def utcoffset(self, dt):
+					# return self.offset
 
-				def utcoffset(self, dt):
-					return self.offset
+				# def tzname(self, dt):
+					# return "Custom Timezone"
 
-				def tzname(self, dt):
-					return "Custom Timezone"
+				# def dst(self, dt):
+					# return datetime.timedelta(0)
 
-				def dst(self, dt):
-					return datetime.timedelta(0)
-
-			tz_offset = MyTimezone(datetime.timedelta(hours=-1))
-			current = datetime.datetime.now(tz=tz_offset)
+			# tz_offset = MyTimezone(datetime.timedelta(hours=-1))
+			# current = datetime.datetime.now(tz=tz_offset)
 		print("Current datetime:", current)
 		cutmin = int(current.strftime("%M")) // 15 * 15  # round to last 15 minutes of last date
 		past = datetime(current.year, current.month, current.day, current.hour, cutmin, 0) - timedelta(minutes=30)
 		tmpfile = join(CACHE_PATH, "temppic.jpeg")
+		from random import choice
+		headers = {"User-Agent": choice(AGENTS), 'Accept': 'application/json'}
 		for index in range(12):
 			url = "https://imn-api.meteoplaza.com/v4/nowcast/tiles/radarsatellite-world/%s/4/2/5/8/12?outputtype=jpeg" % past.strftime("%Y%m%d%H%M%S")
 			filename = "%s-%s-%s-%s h.jpg" % (past.strftime("%Y"), past.strftime("%m"), past.strftime("%d"), past.strftime("%H"))
 			try:
-				response = get(url, headers=HEADERS, timeout=(3.05, 6))
+				response = get(url, headers=headers, timeout=(3.05, 6))
 				response.raise_for_status()
 				with open(tmpfile, "wb") as file:
 					file.write(response.content)
@@ -2575,8 +2576,10 @@ class View_Slideshow(Screen, HelpableScreen):
 		self.updatePiclist()
 
 	def getPictures(self):
-		for url in self.urls:  # load Picture for Slideshow
-			url = "http:%s" % url.replace("[TYPE]", self.menu)  # e.g. https://cache.foreca.net/i/sat/__eur__-sat-20241109120000.jpg
+		# from random import choice
+		# headers = {"User-Agent": choice(AGENTS), 'Accept': 'application/json'}
+		for url in self.urls:
+			url = "http:%s" % url.replace("[TYPE]", self.menu)
 			urlname = url.split("-")[-1]
 			filename = "%s-%s-%s-%s h.jpg" % (urlname[:4], urlname[4:6], urlname[6:8], urlname[8:10])
 			try:
@@ -2586,6 +2589,7 @@ class View_Slideshow(Screen, HelpableScreen):
 					file.write(response.content)
 			except exceptions.RequestException as error:
 				FAlog("Error in module 'getPictures': %s" % error)
+		self.updatePiclist()
 
 	def updatePiclist(self):
 		self.old_index = 0
@@ -2593,6 +2597,7 @@ class View_Slideshow(Screen, HelpableScreen):
 		self.currPic = []
 		self.shownow = True
 		self.dirlistcount = 0
+		# self.filelist = FileList(CACHE_PATH, showDirectories=False, matchingPattern=r"^.*\.(jpg|png)$", useServiceRef=False)
 		self.filelist = FileList(CACHE_PATH, showDirectories=False, matchingPattern="^.*.(jpg)", useServiceRef=False)
 		for x in self.filelist.getFileList():
 			if x[0][0]:
