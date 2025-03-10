@@ -1731,7 +1731,7 @@ class CityPanel(Screen, HelpableScreen):
 		self.city = sub(r" ", "_", self['Mlist'].l.getCurrentSelection()[0][1])
 		if DEBUG:
 			FAlog("Fav1:", self.city)
-		config.plugins.foreca.fav1.setValue = (self.city)
+		config.plugins.foreca.fav1.setValue(self.city)
 		config.plugins.foreca.fav1.save()
 		configfile.save()
 		fav1 = self.city[self.city.rfind("/") + 1:]
@@ -1743,7 +1743,7 @@ class CityPanel(Screen, HelpableScreen):
 		self.city = sub(r" ", "_", self['Mlist'].l.getCurrentSelection()[0][1])
 		if DEBUG:
 			FAlog("Fav2:", self.city)
-		config.plugins.foreca.fav2.setValue = (self.city)
+		config.plugins.foreca.fav2.setValue(self.city)
 		config.plugins.foreca.fav2.save()
 		configfile.save()
 		fav2 = self.city[self.city.rfind("/") + 1:]
