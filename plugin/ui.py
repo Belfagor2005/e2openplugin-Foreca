@@ -96,91 +96,91 @@ except NameError:
 VERSION = "3.3.8"
 
 
-# #
-# $Id$
-# #
+#
+#  $Id$
+#
 # -------------------------------------------------------
-# #
-# #			   Foreca Weather Forecast E2
-# #
-# #	This Plugin retrieves the actual weather forecast
-# #	for the next 10 days from the Foreca website.
-# #
-# #		 We wish all users wonderful weather!
-# #
-# #
-# #				  31.12.2024
-# #
-# #	  Source of information: https://www.foreca.ba
-# #
-# #			  Design and idea by
-# #				   @Bauernbub
-# #			 enigma2 mod by mogli123
-# #
+#
+#              Foreca Weather Forecast E2
+#
+#   This Plugin retrieves the actual weather forecast
+#   for the next 10 days from the Foreca website.
+#
+#        We wish all users wonderful weather!
+#
+#
+#                 11/03/2025
+#
+#     Source of information: https://www.foreca.ba
+#
+#             Design and idea by
+#                  @Bauernbub
+#            enigma2 mod by mogli123
+#
 # -------------------------------------------------------
-# #
-# Provided with no warranties of any sort.
-# #
+#
+#  Provided with no warranties of any sort.
+#
 # -------------------------------------------------------
-# #
+#
 # History:
 # 2.6 Various minor changes
 # 2.7 Wrap around mode enabled in screen-lists
 # 2.8 Calculate next date based on displayed date when left/right key is pushed
-# #	  after prior date jump using 0 - 9 keys was performed
+#     after prior date jump using 0 - 9 keys was performed
 # 2.9 Fix: Show correct date and time in weather videos
-# #	  Main screen navigation modified to comply with standard usage:
-# #	  scroll page up/down by left/right key
-# #	  select previous/next day by left/right arrow key of numeric key group
+#     Main screen navigation modified to comply with standard usage:
+#     scroll page up/down by left/right key
+#     select previous/next day by left/right arrow key of numeric key group
 # 2.9.1 Latvian cities and localization added. Thanks to muca
 # 2.9.2 Iranian cities updated and localization added. Thanks to Persian Prince
-# #	Hungarian and Slovakian cities added. Thanks to torpe
+#   Hungarian and Slovakian cities added. Thanks to torpe
 # 2.9.3 Detail line in main screen condensed to show more text in SD screen
-# #	Grading of temperature colors reworked
-# #	Some code cosmetics
-# #	Translation code simplified: Setting the os LANGUAGE variable isn't needed anymore
-# #	Typos in German localization fixed
+#   Grading of temperature colors reworked
+#   Some code cosmetics
+#   Translation code simplified: Setting the os LANGUAGE variable isn't needed anymore
+#   Typos in German localization fixed
 # 2.9.4 Many world-wide cities added. Thanks to AnodA
-# #	Hungarian and Slovakian localization added. Thanks to torpe
+#   Hungarian and Slovakian localization added. Thanks to torpe
 # 2.9.5 Fixed: Cities containing "_" didn't work as favorites. Thanks to kashmir
 # 2.9.6 Size of temperature item slightly extended to match with skins using italic font
-# #	Grading of temperature colors reworked
+#   Grading of temperature colors reworked
 # 2.9.7 Use specified "Frame size in full view" value when showing "5 day forecast" chart
-# #	Info screen reworked
-# #	False temperature colors fixed
-# #	Up/down keys now scroll by page in main screen (without highlighting selection)
+#   Info screen reworked
+#   False temperature colors fixed
+#   Up/down keys now scroll by page in main screen (without highlighting selection)
 # 3.0.0 Option added to select measurement units. Thanks to muca
-# #	Option added to select time format.
-# #	Setup menu reworked.
-# #	Main screen navigation modified: Select previous/next day by left/right key
-# #	Many Italian cities added and Italian localization updated. Thanks to mat8861
-# #	Czech, Greek, French, Latvian, Dutch, Polish, Russian localization updated. Thanks to muca
+#   Option added to select time format.
+#   Setup menu reworked.
+#   Main screen navigation modified: Select previous/next day by left/right key
+#   Many Italian cities added and Italian localization updated. Thanks to mat8861
+#   Czech, Greek, French, Latvian, Dutch, Polish, Russian localization updated. Thanks to muca
 # 3.0.1 Fix broken transliteration
-# #	Disable selection in main screen.
+#   Disable selection in main screen.
 # 3.0.2 Weather maps of Czech Republic, Greece, Hungary, Latvia, Poland, Russia, Slovakia added
-# #	Temperature Satellite video added
-# #	Control key assignment in slide show reworked to comply with Media Player standard
-# #	Some Italian cities added
-# #	Thumbnail folders compacted
-# #	Unused code removed, redundant code purged
-# #	Localization updated
+#   Temperature Satellite video added
+#   Control key assignment in slide show reworked to comply with Media Player standard
+#   Some Italian cities added
+#   Thumbnail folders compacted
+#   Unused code removed, redundant code purged
+#   Localization updated
 # 3.0.3 List of German states and list of European countries sorted
-# #	Code cosmetics
-# #	Localization updated
+#   Code cosmetics
+#   Localization updated
 # 3.0.4 Language determination improved
 # 3.0.5 Setup of collating sequence reworked
 # 3.0.6 Weather data in Russian version obtained from foreca.com instead of foreca.ru due
-# #	  to structural discrepancy of Russian web site
-# #	Code cosmetics
+#     to structural discrepancy of Russian web site
+#   Code cosmetics
 # 3.0.7 Turkish cities updated. Thanks to atsiz77
-# #	Debug state noted in log file
+#   Debug state noted in log file
 # 3.0.8 Fixed for Foreca's pages changes
 # 3.0.9 Path for weather map regions updated after change of Wetterkontor's pages. Thanks to Bag58.
-# #	Add missing spinner icon
+#   Add missing spinner icon
 # 3.1.0 Plugin splitted into a loader and UI part, as Foreca needs quite a while to load. Hence
-# #	  actual load postponed until the user requests for it.
-# #	Finnish localization added. Thanks to kjuntara
-# #	Ukrainian localization added. Thanks to Irkoff
+#     actual load postponed until the user requests for it.
+#   Finnish localization added. Thanks to kjuntara
+#   Ukrainian localization added. Thanks to Irkoff
 # 3.1.1 ForecaPreview skineable
 # 3.1.2 Next screens skineable
 # 3.1.3 Added font size for slideshow into setting
@@ -188,53 +188,53 @@ VERSION = "3.3.8"
 # 3.1.7 fix url foreca com
 # 3.1.8 fix problem with national chars in favorite names
 # 3.1.9 renamed parsed variables, added humidity into list - for display in default screen must be:
-# #	changed line:		self.itemHeight = 90   ... change to new height, if is needed
-# #	and rearanged lines:	self.valText1 = 365,5,600,28
-# #				self.valText2 = 365,33,600,28
-# #				self.valText3 = 365,59,600,28
-# #				self.valText4 = 365,87,600,28
-# #	similar in user skin - there text4Pos="x,y,w,h" must be added
+#   changed line:       self.itemHeight = 90   ... change to new height, if is needed
+#   and rearanged lines:    self.valText1 = 365,5,600,28
+#               self.valText2 = 365,33,600,28
+#               self.valText3 = 365,59,600,28
+#               self.valText4 = 365,87,600,28
+#   similar in user skin - there text4Pos="x,y,w,h" must be added
 # 3.2.0 fixed satellite maps, removed infrared - page not exist more, sanity check if nothing is downloaded
 # 3.2.3-r3 change URL to .net and .ru
 # 3.2.7 change URL to .hr, Py3-bugfix for videos and several code cleanups
 # 3.2.8 'startservice.cfg', 'fav1.cfg' and 'fav2.cfg' are obsolete and now part of etc/enigma2/settings and therefore can be deleted
 # 3.2.9 change URL to .biz (THX to jup @OpenA.TV) and some code improvements
-# #
+#
 # To do:
-# #	Add 10 day forecast on green key press
-# #	City search at Foreca website on yellow key press. This will eliminate complete city DB.
-# #	Option to add unlimited cities to a favorite list and to manage this favorite list (add & delete city, sort list).
-# #	Show home city (first entry of favorite list) on OK key press.
-# #	Skip to next/previous favorite city on left/right arrow key.
-# #	Show weather videos and maps on blue key
-# #	Show setup menu on Menu key
+#   Add 10 day forecast on green key press
+#   City search at Foreca website on yellow key press. This will eliminate complete city DB.
+#   Option to add unlimited cities to a favorite list and to manage this favorite list (add & delete city, sort list).
+#   Show home city (first entry of favorite list) on OK key press.
+#   Skip to next/previous favorite city on left/right arrow key.
+#   Show weather videos and maps on blue key
+#   Show setup menu on Menu key
 # 3.2.11 Umstellung auf Foreca Seite .biz und Nutzung WebClientContextFactory für https
 # Unresolved: Crash when scrolling in help screen of city panel
 # To do:
-# #	Show weather videos and maps on blue key
-# #	Show setup menu on Menu key
-# #
+#   Show weather videos and maps on blue key
+#   Show setup menu on Menu key
+#
 # 3.3.4 change URL to and many code improvements
-# RECODE FROM LULULLA TO 20241222
+#  RECODE FROM LULULLA TO 20241222
 # To do:
-# #	Add choice list for pressur and other menu
-# #	check all url and fetch..
-# #	CACHE_PATH moved
-# #	FAlog moved
-# #	secure remove image from folde CACHE_PATH
-# #	Remove profile ICC from bad image
+#   Add choice list for pressur and other menu
+#   check all url and fetch..
+#   CACHE_PATH moved
+#   FAlog moved
+#   secure remove image from folde CACHE_PATH
+#   Remove profile ICC from bad image
 # 3.3.5 change URL to and many code improvements
-# RECODE FROM LULULLA
+#  RECODE FROM LULULLA
 # To do:
-# #	Add server url online
+#   Add server url online
 # 3.3.6 fix translations and many code improvements
-# RECODE FROM LULULLA
+#  RECODE FROM LULULLA
 # 3.3.7 removed .cfg files - add TV button for Menu Config
-# RECODE FROM LULULLA
+#  RECODE FROM LULULLA
 # 3.3.8 Mahor fix on clean all code unnecessay / append new PY3
-# Translate 90% complete
-# # thank's Orlandoxx	restore Eumsat screen picxview
-# RECODE FROM LULULLA
+#  Translate 90% complete
+#  # thank's Orlandoxx  restore Eumsat screen picxview
+#  RECODE FROM LULULLA
 
 
 class WebClientContextFactory(ClientContextFactory):
@@ -244,7 +244,7 @@ class WebClientContextFactory(ClientContextFactory):
 
 	def getContext(self, hostname=None, port=None):
 		ctx = ClientContextFactory.getContext(self)
-		if self.hostname and ClientTLSOptions is not None:	# workaround for TLS SNI
+		if self.hostname and ClientTLSOptions is not None:  # workaround for TLS SNI
 			ClientTLSOptions(self.hostname, ctx)
 		return ctx
 
@@ -397,7 +397,7 @@ FILTERout = []
 FILTERidx = 0
 
 MAPPING = {"zh": "en"}
-LANGUAGE = language.getActiveLanguage()[:2]	 # "en_US" -> "en"
+LANGUAGE = language.getActiveLanguage()[:2]  # "en_US" -> "en"
 if LANGUAGE in MAPPING:
 	LANGUAGE = MAPPING.get(LANGUAGE, "en")
 
@@ -428,7 +428,7 @@ def format_message(entries):
 		left_column = entry[0]
 		right_column = entry[1]
 		spaces = " " * (max_left_width - len(left_column))
-		formatted_message += "{:<{width}} =	  {}\n".format(left_column + spaces, right_column, width=max_left_width)
+		formatted_message += "{:<{width}} =   {}\n".format(left_column + spaces, right_column, width=max_left_width)
 	return formatted_message
 
 
@@ -450,6 +450,7 @@ def download_image(url, devicepath):
 		raise e
 
 
+"""
 def remove_icc_profile(devicepath):
 	try:
 		warnings.filterwarnings("ignore", "(?s).*iCCP.*", category=UserWarning)
@@ -458,6 +459,7 @@ def remove_icc_profile(devicepath):
 	except Exception as e:
 		print("Error: Failed to remove ICC profile", str(e))
 		raise e
+"""
 
 
 def getScale():
@@ -469,7 +471,7 @@ def clean_url(url):
 
 
 # ------------------------------------------------------------------------------------------
-# ----------------------------------  MainMenuList	 ---------------------------------------
+# ----------------------------------  MainMenuList   ---------------------------------------
 # ------------------------------------------------------------------------------------------
 
 
@@ -1121,7 +1123,7 @@ class ForecaPreview(Screen, HelpableScreen):
 
 	def info(self):
 		message = str("%s" % (_(
-			"Server URL:	%s\n"
+			"Server URL:    %s\n"
 		) % BASEURL))
 		entries = [
 			(_("VERSION"), VERSION),
@@ -1134,7 +1136,7 @@ class ForecaPreview(Screen, HelpableScreen):
 			(_("Tv/Txt"), _("Go to City Panel")),
 			(_("Menu"), _("Satellite photos and maps")),
 			(_("Up/Down"), _("Previous/Next page")),
-			(_("<	>"), _("Prognosis Previous/Next day")),
+			(_("<   >"), _("Prognosis Previous/Next day")),
 			(_("0 - 9"), _("Prognosis (x) days from now"))
 		]
 		message += format_message(entries)
@@ -1372,7 +1374,7 @@ class ForecaPreview(Screen, HelpableScreen):
 		self["Titel5"].text = ''
 
 		"""
-		self["Titel"].text = self.plaats + "  -	 " + datum2
+		self["Titel"].text = self.plaats + " - " + datum2
 		self["Titel3"].text = self.ort[:foundPos].replace("_", " ") + "\r\n" + self.ort[foundPos + 1:].replace("_", " ") + "\r\n" + datum2
 		self["Titel4"].text = self.plaats
 		self["Titel5"].text = datum2
@@ -1591,7 +1593,7 @@ class CityPanel(Screen, HelpableScreen):
 
 	def info(self):
 		message = str("%s" % (_(
-			"Server URL:	%s\n"
+			"Server URL:    %s\n"
 		) % BASEURL))
 		entries = [
 			(_("Server URL"), BASEURL),
@@ -1605,7 +1607,7 @@ class CityPanel(Screen, HelpableScreen):
 			(_("Tv/Txt"), _("Go to City Panel")),
 			(_("Menu"), _("Satellite photos and maps")),
 			(_("Up/Down"), _("Previous/Next page")),
-			(_("<	>"), _("Prognosis Previous/Next day")),
+			(_("<   >"), _("Prognosis Previous/Next day")),
 			(_("0 - 9"), _("Prognosis (x) days from now"))
 		]
 		message += format_message(entries)
@@ -1723,7 +1725,7 @@ class CityPanel(Screen, HelpableScreen):
 		config.plugins.foreca.home.save()
 		configfile.save()
 		start = self.city[self.city.rfind("/") + 1:]
-		message = "%s %s" % (_("This city is stored as home!\n\n								  "), self.city)
+		message = "%s %s" % (_("This city is stored as home!\n\n                                  "), self.city)
 		self.session.open(MessageBox, message, MessageBox.TYPE_INFO, timeout=8)
 
 	def green(self):
@@ -1735,7 +1737,7 @@ class CityPanel(Screen, HelpableScreen):
 		config.plugins.foreca.fav1.save()
 		configfile.save()
 		fav1 = self.city[self.city.rfind("/") + 1:]
-		message = "%s %s" % (_("This city is stored as favorite 1!\n\n							   "), self.city)
+		message = "%s %s" % (_("This city is stored as favorite 1!\n\n                             "), self.city)
 		self.session.open(MessageBox, message, MessageBox.TYPE_INFO, timeout=8)
 
 	def yellow(self):
@@ -1747,7 +1749,7 @@ class CityPanel(Screen, HelpableScreen):
 		config.plugins.foreca.fav2.save()
 		configfile.save()
 		fav2 = self.city[self.city.rfind("/") + 1:]
-		message = "%s %s" % (_("This city is stored as favorite 2!\n\n							   "), self.city)
+		message = "%s %s" % (_("This city is stored as favorite 2!\n\n                             "), self.city)
 		self.session.open(MessageBox, message, MessageBox.TYPE_INFO, timeout=8)
 
 	def CityEntryItem(self, entry):
@@ -1930,7 +1932,7 @@ class SatPanel(Screen, HelpableScreen):
 
 	def info(self):
 		message = str("%s" % (_(
-			"Server URL:	%s\n"
+			"Server URL:    %s\n"
 		) % BASEURL))
 		entries = [
 			("VERSION", "%s" % VERSION),
@@ -1941,7 +1943,7 @@ class SatPanel(Screen, HelpableScreen):
 			(_("Blue"), _("Settings")),
 			(_("Txt/Red"), _("Open Keyboard")),
 			(_("Up/Down"), _("Previous/Next")),
-			(_("<	>"), _("Previous/Next page")),
+			(_("<   >"), _("Previous/Next page")),
 			(_("Info"), _("This information"))
 		]
 		message += format_message(entries)
@@ -2251,7 +2253,7 @@ class SatPanelb(Screen, HelpableScreen):
 
 	def info(self):
 		message = str("%s" % (_(
-			"Server URL:	%s\n"
+			"Server URL:    %s\n"
 		) % BASEURL))
 		entries = [
 			("VERSION", "%s" % VERSION),  # No translation needed
@@ -2259,7 +2261,7 @@ class SatPanelb(Screen, HelpableScreen):
 			(_("Blue"), _("Settings")),
 			(_("Txt/Red"), _("Open Keyboard")),
 			(_("Up/Down"), _("Previous/Next")),
-			(_("<	>"), _("Previous/Next page")),
+			(_("<   >"), _("Previous/Next page")),
 			(_("Info"), _("This information"))
 		]
 		message += format_message(entries)
@@ -2323,7 +2325,7 @@ class SatPanelb(Screen, HelpableScreen):
 						FAlog("SatBild Error: Downloaded file is empty")
 					self.session.open(MessageBox, _("Failed to Downloaded the satellite image: %s" % str(devicepath)), MessageBox.TYPE_ERROR)
 					return
-				remove_icc_profile(devicepath)
+				# remove_icc_profile(devicepath)
 				self.session.open(PicView, devicepath, 0, False, None)
 			except Exception as e:
 				if DEBUG:
@@ -2475,10 +2477,10 @@ class View_Slideshow(Screen, HelpableScreen):
 			<eLabel position=\"0,0\" zPosition=\"0\" size=\"" + str(size_w) + "," + str(size_h) + "\" backgroundColor=\"" + self.bgcolor + "\" /> \
 			<widget name=\"pic\" position=\"" + str(space) + "," + str(space + 40) + "\" size=\"" + str(size_w - (space * 2)) + "," + str(size_h - (space * 2) - 40) + "\" zPosition=\"1\" alphatest=\"on\" /> \
 			<widget name=\"point\" position=\"" + str(space + 5) + "," + str(space + 4) + "\" size=\"35,35\" zPosition=\"2\" pixmap=\"" + THUMB_PATH + "record.png\" alphatest=\"on\" /> \
-			<widget name=\"play_icon\" position=\"" + str(space + 40) + "," + str(space + 2) + "\" size=\"40,40\" zPosition=\"2\" pixmap=\"" + THUMB_PATH + "ico_mp_play.png\"	alphatest=\"on\" /> \
+			<widget name=\"play_icon\" position=\"" + str(space + 40) + "," + str(space + 2) + "\" size=\"40,40\" zPosition=\"2\" pixmap=\"" + THUMB_PATH + "ico_mp_play.png\"  alphatest=\"on\" /> \
 			<widget name=\"pause_icon\" position=\"" + str(space + 40) + "," + str(space + 2) + "\" size=\"40,40\" zPosition=\"2\" pixmap=\"" + THUMB_PATH + "ico_mp_pause.png\"  alphatest=\"on\" /> \
 			<widget name=\"file\" position=\"" + str(space + 85) + "," + str(space + 4) + "\" size=\"" + str(size_w - (space * 2) - 50) + "," + str(fontsize + 5) + "\" font=\"Regular;" + str(fontsize) + "\" halign=\"left\" foregroundColor=\"" + self.textcolor + "\" zPosition=\"2\" noWrap=\"1\" transparent=\"1\" /> \
-			<widget name=\"help_icon\"	position=\"20,70\" size=\"53,38\" zPosition=\"2\" pixmap=\"/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_help.png\" alphatest=\"on\" /> \
+			<widget name=\"help_icon\"  position=\"20,70\" size=\"53,38\" zPosition=\"2\" pixmap=\"/usr/lib/enigma2/python/Plugins/Extensions/Foreca/buttons/key_help.png\" alphatest=\"on\" /> \
 			</screen>"
 
 		Screen.__init__(self, session)
@@ -2545,7 +2547,7 @@ class View_Slideshow(Screen, HelpableScreen):
 	def getNpreparePictures(self):
 		current = get_current_time()
 		print("Current datetime:", current)
-		cutmin = int(current.strftime("%M")) // 15 * 15	 # round to last 15 minutes of last date
+		cutmin = int(current.strftime("%M")) // 15 * 15  # round to last 15 minutes of last date
 		past = datetime(current.year, current.month, current.day, current.hour, cutmin, 0) - timedelta(minutes=30)
 		tmpfile = join(CACHE_PATH, "temppic.jpeg")
 		from random import choice
@@ -2560,7 +2562,7 @@ class View_Slideshow(Screen, HelpableScreen):
 					file.write(response.content)
 				imgorg = Image.open(tmpfile)
 				worg, horg = imgorg.size
-				wnew, hnew = 1470, 1102	 # same size as on the homepage
+				wnew, hnew = 1470, 1102  # same size as on the homepage
 				xnew, ynew = (worg - wnew) / 2, horg - hnew
 				newimg = imgorg.crop((xnew, ynew, wnew, hnew))
 				newimg.convert("RGB").save(join(CACHE_PATH, filename), format="jpeg", progressive=True)
@@ -2609,7 +2611,7 @@ class View_Slideshow(Screen, HelpableScreen):
 
 	def info(self):
 		message = str("%s" % (_(
-			"Server URL:	%s\n"
+			"Server URL:    %s\n"
 		) % BASEURL))
 		entries = [
 			("VERSION", "%s" % VERSION),
@@ -2997,7 +2999,7 @@ class PicSetup(Screen, ConfigListScreen):
 		self['Mlist'].instance.moveSelection(self['Mlist'].instance.moveUp)
 		self.createSetup()
 
-	def keyNumber(self, number):
+	def keyNumberGlobal(self, number):
 		self["Mlist"].handleKey(KEY_0 + number)
 		self.createSetup()
 
