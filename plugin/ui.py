@@ -1374,8 +1374,19 @@ class ForecaPreview(Screen, HelpableScreen):
 		self["Titel5"].text = ''
 
 		"""
+
+		# Extract state and city from 'self.ort'
+		state = self.ort[:foundPos].replace("_", " ")
+		city = self.ort[foundPos + 1:].replace("_", " ")
+		# Apply translation using the dictionary
+		state = translation_dict.get(state.lower(), state).capitalize()
+		city = translation_dict.get(city.lower(), city).capitalize()
+		# Assign the translated text
+		self["Titel3"].text = state + "\r\n" + city + "\r\n" + datum2
+		
 		self["Titel"].text = self.plaats + " - " + datum2
-		self["Titel3"].text = self.ort[:foundPos].replace("_", " ") + "\r\n" + self.ort[foundPos + 1:].replace("_", " ") + "\r\n" + datum2
+
+		# self["Titel3"].text = self.ort[:foundPos].replace("_", " ") + "\r\n" + self.ort[foundPos + 1:].replace("_", " ") + "\r\n" + datum2
 		self["Titel4"].text = self.plaats
 		self["Titel5"].text = datum2
 
