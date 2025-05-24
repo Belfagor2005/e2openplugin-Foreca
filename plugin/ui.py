@@ -59,6 +59,7 @@ from twisted.internet.ssl import ClientContextFactory
 import requests
 import ssl
 import warnings
+import builtins
 
 PY3 = version_info[0] == 3
 if PY3:
@@ -371,11 +372,11 @@ def FAlog(info, wert=""):
 		try:
 			now = get_current_time()
 			with open('/tmp/foreca.log', 'a') as f:
-				f.write('{} {} {}'.format(now.strftime('%H:%M:%S'), info, wert))
+				f.write('{} {} {}\n'.format(now.strftime('%H:%M:%S'), info, wert))
 		except IOError:
-			print('[Foreca] Logging-Error')
+			builtins.print('[Foreca] Logging-Error')
 	else:
-		print('[Foreca] {} {}'.format(str(info), str(wert)))
+		builtins.print('[Foreca] {} {}'.format(str(info), str(wert)))
 
 
 # Make Path for user settings
@@ -1383,7 +1384,6 @@ class ForecaPreview(Screen, HelpableScreen):
 		city = translation_dict.get(city.lower(), city).capitalize()
 		# Assign the translated text
 		self["Titel3"].text = state + "\r\n" + city + "\r\n" + datum2
-		
 		self["Titel"].text = self.plaats + " - " + datum2
 
 		# self["Titel3"].text = self.ort[:foundPos].replace("_", " ") + "\r\n" + self.ort[foundPos + 1:].replace("_", " ") + "\r\n" + datum2
